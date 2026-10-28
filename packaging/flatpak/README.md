@@ -12,7 +12,8 @@ handles it), or run:
     flatpak install --user https://kosmos.law/flatpak/kosmicpdf.flatpakref
 
 This installs the app and subscribes to the Kosmos repository, so updates arrive
-with other system updates. The Flatpak includes OCR (Tesseract, English) and PDF/A
+with other system updates. If it's your first per-user Flatpak app and it doesn't
+appear in the Menu, restart Cinnamon (Ctrl+Alt+Esc) or log out and back in once. The Flatpak includes OCR (Tesseract, English) and PDF/A
 conversion (OCRmyPDF, Ghostscript); nothing else needs installing.
 
 If the app looks plain rather than matching the desktop theme, install the
