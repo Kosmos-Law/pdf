@@ -10,7 +10,8 @@ from PySide6.QtCore import QEvent, QPoint, QPointF, Qt, QTimer
 from PySide6.QtGui import QGuiApplication, QMouseEvent
 from PySide6.QtWidgets import QApplication, QMessageBox
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+if not os.environ.get("KOSMICPDF_TEST_INSTALLED"):   # set when testing an installed build (e.g. the Flatpak)
+    sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from kosmicpdf import dialogs, window  # noqa: E402
 from kosmicpdf.core import PdfDocument, pages_mime  # noqa: E402
 
@@ -577,6 +578,16 @@ dark_ok = _QP(); dark_ok.setColor(_QP.Window, QColor("#333339"))
 check("dark desktop + light palette -> Kosmos dark palette",
       choose_palette(True, light).color(_QP.Window).name() == "#2e3440")
 check("palette kept when it already matches", choose_palette(True, dark_ok) is dark_ok and choose_palette(False, light) is light)
+
+# --- single-instance handoff (on a private socket, never the real app's) ------------------------------------------
+from kosmicpdf import app as appmod  # noqa: E402
+appmod.SOCKET_PATH = os.path.join(tempfile.mkdtemp(prefix="kosmicpdf-test-sock-"), "s.sock")
+check("no running instance -> handoff declines", appmod.send_to_running(["/x.pdf"]) is False)
+received = []
+server = appmod.InstanceServer(received.append)
+check("handoff reaches the running instance", appmod.send_to_running(["/a.pdf", "/b.pdf"]) and (pump(30) or True)
+      and received == [["/a.pdf", "/b.pdf"]], str(received))
+check("app modules don't load QtNetwork", "PySide6.QtNetwork" not in sys.modules)
 
 # --- page number field ----------------------------------------------------------------------------------------
 w.tabs.setCurrentWidget(t); pump()

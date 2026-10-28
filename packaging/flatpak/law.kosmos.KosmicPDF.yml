@@ -52,6 +52,27 @@ cleanup:
   - /lib/python3.13/site-packages/PySide6/balsam*
   - /lib/python3.13/site-packages/PySide6/svgtoqml
   - /lib/python3.13/site-packages/PySide6/qsb
+  # Leftovers that only served the parts removed above, Qt's database drivers, and
+  # QtNetwork (unused; it needs Kerberos libraries the runtime doesn't have).
+  - /lib/python3.13/site-packages/PySide6/Qt/lib/libQt6Labs*
+  - /lib/python3.13/site-packages/PySide6/Qt/lib/libQt6Lottie*
+  - /lib/python3.13/site-packages/PySide6/Qt/lib/libQt6Wayland*Compositor*
+  - /lib/python3.13/site-packages/PySide6/Qt/lib/libQt6EglFsKmsGbmSupport*
+  - /lib/python3.13/site-packages/PySide6/Qt/lib/libQt6VirtualKeyboard*
+  - /lib/python3.13/site-packages/PySide6/Qt/lib/libQt6Network*
+  - /lib/python3.13/site-packages/PySide6/QtNetwork*
+  - /lib/python3.13/site-packages/PySide6/Qt/plugins/sqldrivers
+  - /lib/python3.13/site-packages/PySide6/Qt/plugins/networkinformation
+  - /lib/python3.13/site-packages/PySide6/Qt/plugins/tls
+  - /lib/python3.13/site-packages/PySide6/Qt/plugins/imageformats/libqpdf.so
+  - /lib/python3.13/site-packages/PySide6/Qt/plugins/platforminputcontexts/libqtvirtualkeyboard*
+  - /lib/python3.13/site-packages/PySide6/Qt/plugins/egldeviceintegrations
+  - /lib/python3.13/site-packages/PySide6/Qt/plugins/wayland-graphics-integration-server
+  - /lib/python3.13/site-packages/PySide6/Qt/plugins/platforms/libqvnc.so
+  - /lib/python3.13/site-packages/PySide6/Qt/plugins/vectorimageformats/libqlottievectorimage.so
+  - /lib/python3.13/site-packages/PySide6/Qt/plugins/generic/libqtuiotouchplugin.so
+  - /lib/python3.13/site-packages/PySide6/libpyside6qml*
+  - /lib/python3.13/site-packages/PySide6/QtLabsStyleKit*
 modules:
   # OCR engine. In the sandbox OCRmyPDF can't use the system's Tesseract.
   - name: leptonica

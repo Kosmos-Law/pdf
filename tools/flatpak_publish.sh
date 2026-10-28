@@ -83,6 +83,25 @@ Icon=$url/kosmicpdf.svg
 GPGKey=$gpgkey
 EOF
 
+# Test what users will actually get: install from the signed repository into a
+# throwaway installation and run the test suite on the user runtime. (Testing
+# with flatpak-builder --run uses the much larger SDK, which can hide missing
+# libraries.)
+echo "==> Testing the published build as users will run it"
+test_inst="$cache/test-install"
+rm -rf "$test_inst" "$cache/test-results"
+FLATPAK_USER_DIR="$test_inst" flatpak remote-add --user --gpg-import="$keydir/public.gpg" kosmos-test "file://$site/repo/"
+FLATPAK_USER_DIR="$test_inst" flatpak install --user -y --noninteractive kosmos-test "$app" >/dev/null
+if ! FLATPAK_USER_DIR="$test_inst" nice -n 19 flatpak run --env=QT_QPA_PLATFORM=offscreen \
+        --env=KOSMICPDF_TEST_INSTALLED=1 --env=PYTHONPATH=/app/share/kosmicpdf --command=python3 \
+        "$app" -P "$root/tests/smoke.py" "$cache/test-results" > "$cache/test-results.log" 2>&1; then
+    grep -E "^FAIL|Traceback|Error" "$cache/test-results.log" | head -20
+    echo "Tests FAILED in the published build (log: $cache/test-results.log). Do not upload."
+    exit 1
+fi
+tail -1 "$cache/test-results.log"
+rm -rf "$test_inst"
+
 echo "==> Published. Upload the contents of $site to $url/"
 echo "    Users install with:  flatpak install --user $url/kosmicpdf.flatpakref"
 echo "    (or by opening kosmicpdf.flatpakref from the web page)"

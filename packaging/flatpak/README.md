@@ -36,6 +36,15 @@ without the theme, Kosmic PDF falls back to a dark Kosmos palette.)
    the existing `repo/` contents (it holds the release history users update from).
    Use `--url` if hosting somewhere else.
 
+Before finishing, the script installs the new build into a throwaway installation
+and runs the full test suite on the user runtime; if anything fails it stops and
+says not to upload. (Testing with `flatpak-builder --run` isn't enough: it uses the
+much larger SDK, which once hid a missing library that stopped the app starting.)
+
+To test-launch the app by hand without touching your own recent files, pass
+`--env=KOSMICPDF_SETTINGS_DIR=/some/scratch/dir` to `flatpak run`. (Flatpak always
+sets `XDG_CONFIG_HOME` itself, so overriding that has no effect.)
+
 Requirements: `flatpak-builder` (`sudo apt install flatpak-builder`). The build
 SDK is downloaded into a private Flatpak installation under
 `~/.cache/kosmicpdf-flatpak`, leaving the user's own installation alone.

@@ -34,6 +34,11 @@
     <color type="primary" scheme_preference="dark">#2e3440</color>
   </branding>
   <releases>
+    <release version="0.1.2" date="2026-10-28">
+      <description>
+        <p>Fixes the Flatpak failing to start.</p>
+      </description>
+    </release>
     <release version="0.1.1" date="2026-10-28">
       <description>
         <p>Follows the desktop's dark mode even when its theme isn't available to the Flatpak.</p>
