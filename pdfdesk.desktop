@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=PDF Desk
+GenericName=PDF Viewer and Editor
+Comment=View, annotate, reorganise, OCR, redact and Bates-number PDFs
+Exec=/home/james/Dev/pdfdesk/pdfdesk.sh %F
+Icon=pdfdesk
+Terminal=false
+Categories=Office;Viewer;
+MimeType=application/pdf;image/png;image/jpeg;image/tiff;
