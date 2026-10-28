@@ -34,6 +34,11 @@
     <color type="primary" scheme_preference="dark">#2e3440</color>
   </branding>
   <releases>
+    <release version="0.1.4" date="2026-10-28">
+      <description>
+        <p>Icon: the Kosmos sparkle above "PDF" on a dog-eared page, in deeper colours.</p>
+      </description>
+    </release>
     <release version="0.1.3" date="2026-10-28">
       <description>
         <p>New icon: the Kosmos mark above "PDF", in deeper colours.</p>
