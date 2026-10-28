@@ -1,0 +1,8 @@
+# Pinned, tested versions. This is the complete list: install.sh installs it with
+# --no-deps, because PyMuPDF 2.0 declares page-layout analysis packages (onnxruntime,
+# numpy, networkx, ...) that Kosmic PDF never uses, and the full PySide6 package adds
+# Qt add-ons and a web engine. Together that would more than double the install size.
+# The test suite (tests/smoke.py) passes against exactly this set.
+PySide6_Essentials==6.12.0
+shiboken6==6.12.0
+pymupdf==2.0
