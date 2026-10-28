@@ -563,7 +563,8 @@ class MainWindow(QMainWindow):
     # --- state --------------------------------------------------------------
     def update_window_title(self):
         t = self.tab
-        self.setWindowTitle(f"{t.pdoc.display_name()} — Kosmic PDF" if t else "Kosmic PDF")
+        name = QApplication.applicationName()
+        self.setWindowTitle(f"{t.pdoc.display_name()} — {name}" if t else name)
 
     def update_state(self):
         has = self.tab is not None

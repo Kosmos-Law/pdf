@@ -5,6 +5,9 @@ version of the kosmos.law frost-to-amber gradient, carrying the Kosmos K-and-spa
 mark in night. The mark alone, without lettering, stays legible down to panel size.
 A faint dark edge and drop shadow hold the page on light and dark panels.
 
+The development copy (./install.sh --dev) gets the same icon in greys, so the two
+are easy to tell apart in the Menu and the panel.
+
 Run: .venv/bin/python tools/make_icon.py
 """
 import os
@@ -18,6 +21,7 @@ OUT = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 
 # Kosmos palette (kosmos.law): night for ink; frost and amber, deepened so the page
 # holds its own on light panels.
 NIGHT, FROST, AMBER = "#2e3440", "#6aaabd", "#e2b461"
+DEV_LIGHT, DEV_DARK = "#8c96a8", "#c3c9d4"      # slate greys for the development copy
 
 # Lucide file page in its 24-unit grid (stroked 2 units wide, so it reaches 1 unit beyond).
 PAGE = ("M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588"
@@ -45,13 +49,13 @@ def mark():
             f'<path d="{KAPPA}"/><path d="{SPARKLE}"/></g>')
 
 
-def svg():
+def svg(start=FROST, end=AMBER):
     scale = 10.6
     tx, ty = 128 - 12 * scale, 128 - 12 * scale
     return f"""<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
   <defs>
     <linearGradient id="kosmos" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0.15" stop-color="{FROST}"/><stop offset="0.85" stop-color="{AMBER}"/>
+      <stop offset="0.15" stop-color="{start}"/><stop offset="0.85" stop-color="{end}"/>
     </linearGradient>
   </defs>
   <g transform="translate({tx:.1f} {ty:.1f}) scale({scale})" stroke-linecap="round" stroke-linejoin="round">
@@ -67,16 +71,17 @@ def svg():
 def main():
     QGuiApplication(sys.argv)
     os.makedirs(OUT, exist_ok=True)
-    with open(os.path.join(OUT, "kosmicpdf.svg"), "w") as f:
-        f.write(svg())
-    for size in (16, 24, 32, 48, 64, 128, 256):
-        img = QImage(size, size, QImage.Format_ARGB32_Premultiplied)
-        img.fill(Qt.transparent)
-        p = QPainter(img)
-        p.setRenderHint(QPainter.Antialiasing)
-        QSvgRenderer(QByteArray(svg().encode())).render(p, QRectF(0, 0, size, size))
-        p.end()
-        img.save(os.path.join(OUT, f"kosmicpdf-{size}.png"))
+    for name, image in (("kosmicpdf", svg()), ("kosmicpdf-dev", svg(DEV_LIGHT, DEV_DARK))):
+        with open(os.path.join(OUT, f"{name}.svg"), "w") as f:
+            f.write(image)
+        for size in (16, 24, 32, 48, 64, 128, 256):
+            img = QImage(size, size, QImage.Format_ARGB32_Premultiplied)
+            img.fill(Qt.transparent)
+            p = QPainter(img)
+            p.setRenderHint(QPainter.Antialiasing)
+            QSvgRenderer(QByteArray(image.encode())).render(p, QRectF(0, 0, size, size))
+            p.end()
+            img.save(os.path.join(OUT, f"{name}-{size}.png"))
     print("wrote", OUT)
 
 

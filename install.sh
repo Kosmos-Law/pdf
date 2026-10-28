@@ -6,6 +6,11 @@
 #   ./install.sh --default     the same, and make Kosmic PDF the default app for PDFs
 #   ./install.sh --uninstall   remove the Menu entry, icon and command again
 #                              (your settings and this folder are left alone)
+#   ./install.sh --dev         a development copy instead: a "Kosmic PDF (Dev)" Menu
+#                              entry with a grey icon and a `kosmicpdf-dev` command,
+#                              running this folder's code as it stands. It runs
+#                              alongside the installed app (e.g. the Flatpak) and is
+#                              never made the default. Add --uninstall to remove it.
 #
 # Safe to run again at any time, e.g. after `git pull`. Nothing needs root except
 # the optional OCR tools, and the script asks before installing those.
@@ -26,26 +31,39 @@ refresh_menus() {
 }
 
 uninstall() {
-    step "Removing Kosmic PDF from the Menu"
+    step "Removing $label from the Menu"
     # Ask before removing the entry: once it's gone, the system no longer reports it.
     was_default="$(xdg-mime query default application/pdf 2>/dev/null || true)"
-    rm -f "$apps/kosmicpdf.desktop" "$icons/scalable/apps/kosmicpdf.svg"
-    for s in $sizes; do rm -f "$icons/${s}x${s}/apps/kosmicpdf.png"; done
-    if [ -L "$bin/kosmicpdf" ]; then rm -f "$bin/kosmicpdf"; fi
+    rm -f "$apps/$id.desktop" "$icons/scalable/apps/$id.svg"
+    for s in $sizes; do rm -f "$icons/${s}x${s}/apps/$id.png"; done
+    if [ -L "$bin/$id" ]; then rm -f "$bin/$id"; fi
     refresh_menus
-    if [ "$was_default" = "kosmicpdf.desktop" ]; then
-        say "Kosmic PDF was your default PDF app; your system will now pick another."
+    if [ "$was_default" = "$id.desktop" ]; then
+        say "$label was your default PDF app; your system will now pick another."
     fi
     say "Done. Your settings (~/.config/kosmicpdf) and this folder were kept."
 }
 
+action=install
 make_default=no
-case "${1:-}" in
-    --uninstall) uninstall; exit 0 ;;
-    --default) make_default=yes ;;
-    "") ;;
-    *) say "Usage: $0 [--default | --uninstall]"; exit 2 ;;
-esac
+dev=no
+for arg in "$@"; do
+    case "$arg" in
+        --uninstall) action=uninstall ;;
+        --default) make_default=yes ;;
+        --dev) dev=yes ;;
+        *) say "Usage: $0 [--default | --dev] [--uninstall]"; exit 2 ;;
+    esac
+done
+if [ "$dev" = yes ]; then
+    id=kosmicpdf-dev; label="Kosmic PDF (Dev)"; flag=" --dev"
+    if [ "$make_default" = yes ]; then
+        say "The development copy is never made the default PDF app; leave out --default."; exit 2
+    fi
+else
+    id=kosmicpdf; label="Kosmic PDF"; flag=""
+fi
+if [ "$action" = uninstall ]; then uninstall; exit 0; fi
 
 step "Checking Python"
 if ! command -v python3 >/dev/null 2>&1; then
@@ -93,18 +111,19 @@ fi
     || { say "The Python libraries did not install correctly."; exit 1; }
 say "Python libraries ready."
 
-step "Adding Kosmic PDF to the Menu"
+step "Adding $label to the Menu"
 for s in $sizes; do
-    install -Dm644 "$here/kosmicpdf/icons/app/kosmicpdf-$s.png" "$icons/${s}x${s}/apps/kosmicpdf.png"
+    install -Dm644 "$here/kosmicpdf/icons/app/$id-$s.png" "$icons/${s}x${s}/apps/$id.png"
 done
-install -Dm644 "$here/kosmicpdf/icons/app/kosmicpdf.svg" "$icons/scalable/apps/kosmicpdf.svg"
+install -Dm644 "$here/kosmicpdf/icons/app/$id.svg" "$icons/scalable/apps/$id.svg"
 mkdir -p "$apps"
 # The committed .desktop file is machine-neutral; point Exec at this folder.
-sed "s|^Exec=.*|Exec=$here/kosmicpdf.sh %F|" "$here/kosmicpdf.desktop" > "$apps/kosmicpdf.desktop"
+sed -e "s|^Exec=.*|Exec=$here/kosmicpdf.sh$flag %F|" -e "s|^Name=.*|Name=$label|" -e "s|^Icon=.*|Icon=$id|" \
+    "$here/kosmicpdf.desktop" > "$apps/$id.desktop"
 refresh_menus
 mkdir -p "$bin"
-ln -sfn "$here/kosmicpdf.sh" "$bin/kosmicpdf"
-say "Menu entry, icon and the \`kosmicpdf\` command are installed."
+ln -sfn "$here/kosmicpdf.sh" "$bin/$id"
+say "Menu entry, icon and the \`$id\` command are installed."
 case ":$PATH:" in
     *":$bin:"*) ;;
     *) say "(~/.local/bin is not on your PATH yet; it usually is after you next log in.)" ;;
@@ -116,8 +135,10 @@ if [ "$make_default" = yes ]; then
     say "Done."
 fi
 
-step "Kosmic PDF is installed"
-say "Open it from the Menu (Office), or run:  kosmicpdf [files...]"
-if [ "$make_default" = no ]; then
+step "$label is installed"
+say "Open it from the Menu (Office), or run:  $id [files...]"
+if [ "$dev" = yes ]; then
+    say "It runs this folder's code as it stands: edit, then reopen it to try the change."
+elif [ "$make_default" = no ]; then
     say "To make it your default PDF app:  ./install.sh --default"
 fi

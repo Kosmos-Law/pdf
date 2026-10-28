@@ -22,11 +22,14 @@ from . import __version__
 # Inside a Flatpak each launch gets its own /tmp, so the socket goes in the app's
 # runtime folder, which all of its sandboxed copies share.
 FLATPAK_ID = os.environ.get("FLATPAK_ID")
+# --dev marks the development copy (./install.sh --dev): its own name, grey icon and
+# socket, so it runs alongside the installed app instead of handing files to it.
+DEV = "--dev" in sys.argv
 _runtime = os.environ.get("XDG_RUNTIME_DIR") or tempfile.gettempdir()
 if FLATPAK_ID:
     SOCKET_PATH = os.path.join(_runtime, "app", FLATPAK_ID, "kosmicpdf.sock")
 else:
-    SOCKET_PATH = os.path.join(_runtime, f"kosmicpdf-{os.getuid()}.sock")
+    SOCKET_PATH = os.path.join(_runtime, f"kosmicpdf{'-dev' if DEV else ''}-{os.getuid()}.sock")
 
 
 def send_to_running(files):
@@ -164,7 +167,7 @@ def app_icon():
     folder = os.path.join(os.path.dirname(os.path.abspath(__file__)), "icons", "app")
     icon = QIcon()
     for size in (16, 24, 32, 48, 64, 128, 256):
-        icon.addFile(os.path.join(folder, f"kosmicpdf-{size}.png"))
+        icon.addFile(os.path.join(folder, f"kosmicpdf{'-dev' if DEV else ''}-{size}.png"))
     return icon
 
 
@@ -199,9 +202,9 @@ def main():
     if os.environ.get("KOSMICPDF_SETTINGS_DIR"):
         QSettings.setPath(QSettings.NativeFormat, QSettings.UserScope, os.environ["KOSMICPDF_SETTINGS_DIR"])
     app = QApplication(sys.argv)
-    app.setApplicationName("Kosmic PDF")
+    app.setApplicationName("Kosmic PDF (Dev)" if DEV else "Kosmic PDF")   # also ends each window's title
     app.setApplicationVersion(__version__)
-    app.setDesktopFileName(FLATPAK_ID or "kosmicpdf")   # matches the installed .desktop file
+    app.setDesktopFileName(FLATPAK_ID or ("kosmicpdf-dev" if DEV else "kosmicpdf"))   # the installed .desktop file
     app.setWindowIcon(app_icon())
     follow_color_scheme(app)
     if "--new-instance" not in sys.argv:
