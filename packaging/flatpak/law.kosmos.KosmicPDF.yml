@@ -149,6 +149,8 @@ modules:
     build-commands:
       - install -d ${FLATPAK_DEST}/share/kosmicpdf
       - cp -r kosmicpdf ${FLATPAK_DEST}/share/kosmicpdf/
+      # Precompiled, so Python doesn't recompile the app (in memory) at every launch.
+      - python3 -m compileall -q --invalidation-mode checked-hash ${FLATPAK_DEST}/share/kosmicpdf/kosmicpdf
       - install -Dm755 packaging/flatpak/kosmicpdf-launcher.sh ${FLATPAK_DEST}/bin/kosmicpdf
       - sed -e 's|^Exec=.*|Exec=kosmicpdf %F|' -e 's|^Icon=.*|Icon=law.kosmos.KosmicPDF|' kosmicpdf.desktop
         > law.kosmos.KosmicPDF.desktop
@@ -165,5 +167,6 @@ modules:
           - .venv
           - .git
           - .flatpak-builder
+          - kosmicpdf/__pycache__   # the host's bytecode; the build compiles its own
           - build-dir
           - repo

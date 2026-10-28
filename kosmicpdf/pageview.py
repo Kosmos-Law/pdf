@@ -8,7 +8,7 @@ from PySide6.QtGui import (QColor, QFont, QFontMetricsF, QGuiApplication, QImage
 from PySide6.QtWidgets import QApplication, QFrame, QMenu, QScrollArea, QTextEdit, QToolButton, QWidget
 
 from .core import MIME_PAGES, mime_pdf_bytes, parse_da_fontsize
-from .theme import Colors, draw_page_shadow, lucide, swatch
+from .theme import NOTE_MENU_ICON, Colors, draw_page_shadow, lucide, swatch
 
 MARGIN = 12      # space around and between pages, in screen pixels
 CACHE_PAGES = 24
@@ -24,8 +24,13 @@ HIGHLIGHT_COLORS = {
     "Purple": _hex("#dedce6"),
     "Beige": _hex("#ddd8c3"),
 }
-MOVABLE_ANNOTS = {fitz.PDF_ANNOT_FREE_TEXT, fitz.PDF_ANNOT_REDACT, fitz.PDF_ANNOT_SQUARE,
-                  fitz.PDF_ANNOT_TEXT, fitz.PDF_ANNOT_STAMP}
+
+
+def movable(annot_type):
+    """Annotations the select tool can drag about. (A function rather than a set, so
+    importing this module doesn't load PyMuPDF; see app.defer_import.)"""
+    return annot_type in (fitz.PDF_ANNOT_FREE_TEXT, fitz.PDF_ANNOT_REDACT, fitz.PDF_ANNOT_SQUARE,
+                          fitz.PDF_ANNOT_TEXT, fitz.PDF_ANNOT_STAMP)
 
 
 def page_chars(page):
@@ -303,7 +308,7 @@ class NoteMenuButton(QToolButton):
         self.setCursor(Qt.ArrowCursor)
         self.setToolTip("Delete this note")
         self.setIcon(lucide("trash-2", QColor("white")))
-        self.setIconSize(QSize(12, 12))
+        self.setIconSize(QSize(NOTE_MENU_ICON, NOTE_MENU_ICON))
         self.setPopupMode(QToolButton.InstantPopup)
         c = QColor(color)
         self.setStyleSheet(f"QToolButton{{background:{c.name()};border:none;border-radius:4px;padding:0;}}"
@@ -635,7 +640,7 @@ class PageView(QScrollArea):
         self.sel_annot = None
         if self.mode == "select":
             a = self.annot_at(i, pt)
-            if a and a.type[0] in MOVABLE_ANNOTS:
+            if a and movable(a.type[0]):
                 self.sel = None
                 self.sel_annot = (i, a.xref)
                 self._press = ("move", i, pos)

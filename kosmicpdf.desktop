@@ -8,3 +8,4 @@ Icon=kosmicpdf
 Terminal=false
 Categories=Office;Viewer;
 MimeType=application/pdf;image/png;image/jpeg;image/tiff;
+StartupNotify=true

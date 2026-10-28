@@ -13,8 +13,8 @@ from PySide6.QtWidgets import QApplication
 
 ICON_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "icons")
 CACHE_DIR = os.path.join(os.environ.get("XDG_CACHE_HOME", os.path.expanduser("~/.cache")), "kosmicpdf", "icons")
-ICON_SIZES = (16, 18, 20, 24, 32, 36, 40, 48)
-TOOLBAR_ICON = 16      # px
+TOOLBAR_ICON = 16      # px, also the menus' icon size
+NOTE_MENU_ICON = 12    # px, the menu button on a typewriter note
 ICON_STROKE = 1.5      # Lucide line width in its 24-unit grid; its default of 2 looks heavy at this size
 ICON_OPACITY = 1.0
 
@@ -89,19 +89,28 @@ class Colors:
         return f"rgba({c.red()},{c.green()},{c.blue()},{alpha})"
 
 
+def icon_sizes():
+    """The pixel sizes the screens will ask icons for. Drawing only these (rather than a
+    spread of sizes) keeps startup quick, and each icon is drawn at exactly the size
+    shown, so it isn't rescaled and stays crisp at fractional scales like 1.4."""
+    ratios = {s.devicePixelRatio() for s in QApplication.screens()} or {1.0}
+    return sorted({round(n * r) for n in (NOTE_MENU_ICON, TOOLBAR_ICON) for r in ratios})
+
+
 def lucide(name, color):
-    """A crisp, multi-size QIcon from a bundled Lucide SVG in the given colour."""
+    """A crisp QIcon from a bundled Lucide SVG in the given colour."""
     path = os.path.join(ICON_DIR, f"{name}.svg")
     if not os.path.exists(path):
         return QIcon()
     svg = open(path, encoding="utf-8").read()
     icon = QIcon()
     svg = svg.replace('stroke-width="2"', f'stroke-width="{ICON_STROKE}"')
+    sizes = icon_sizes()
     for mode, opacity in ((QIcon.Normal, ICON_OPACITY), (QIcon.Disabled, 0.38 * ICON_OPACITY)):
         data = QByteArray(svg.replace('stroke="currentColor"',
                                       f'stroke="{color.name()}" stroke-opacity="{opacity}"').encode())
         renderer = QSvgRenderer(data)
-        for size in ICON_SIZES:
+        for size in sizes:
             img = QImage(size, size, QImage.Format_ARGB32_Premultiplied)
             img.fill(Qt.transparent)
             p = QPainter(img)

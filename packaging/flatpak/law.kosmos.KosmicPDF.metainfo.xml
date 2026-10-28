@@ -34,6 +34,11 @@
     <color type="primary" scheme_preference="dark">#2e3440</color>
   </branding>
   <releases>
+    <release version="0.1.6" date="2026-10-28">
+      <description>
+        <p>Faster start: the window appears straight away and says what it is opening, and opening a PDF while Kosmic PDF is already running is near instant. The busy cursor now shows from the moment of launch.</p>
+      </description>
+    </release>
     <release version="0.1.5" date="2026-10-28">
       <description>
         <p>Icon: the Kosmos mark on its own, legible at panel size.</p>

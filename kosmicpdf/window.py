@@ -20,6 +20,7 @@ from .thumbs import ThumbPane
 
 WINDOWS = []   # every open MainWindow, so tabs can find their way between them
 RECENT_MAX = 12
+EMPTY_TEXT = "Open a PDF (Ctrl+O), or drop files here."
 
 
 def recent_files():
@@ -377,7 +378,8 @@ class MainWindow(QMainWindow):
         self.tabs.currentChanged.connect(self._tab_changed)
         self.tabs.tabBar().setContextMenuPolicy(Qt.CustomContextMenu)
         self.tabs.tabBar().customContextMenuRequested.connect(self._tab_menu)
-        self.empty = QLabel("Open a PDF (Ctrl+O), or drop files here.")
+        self.empty = QLabel(EMPTY_TEXT)
+        self._pending_files = None
         self.empty.setAlignment(Qt.AlignCenter)
         self.empty.setStyleSheet("font-size:16px;")
         self.empty.setForegroundRole(QPalette.PlaceholderText)
@@ -783,6 +785,34 @@ class MainWindow(QMainWindow):
         files, _ = QFileDialog.getOpenFileNames(self, "Open", dialogs.settings().value("last_dir", os.path.expanduser("~")),
                                                 "PDF files (*.pdf);;Images (*.png *.jpg *.jpeg *.tif *.tiff *.bmp *.gif *.webp);;All files (*)")
         self.open_files(files)
+
+    def open_when_shown(self, files):
+        """Open files once the window is on screen, so a launch shows the window straight
+        away, saying what it's opening, instead of nothing until the document is loaded."""
+        if not files:
+            return
+        self._pending_files = files
+        names = ", ".join(os.path.basename(f) for f in files[:2]) + (", …" if len(files) > 2 else "")
+        self.empty.setText(f"Opening {names}…")
+        self.empty.installEventFilter(self)
+        QApplication.setOverrideCursor(Qt.BusyCursor)
+        QTimer.singleShot(1000, self._open_pending)   # in case the window is never drawn (e.g. starts minimised)
+
+    def eventFilter(self, obj, e):
+        if obj is self.empty and e.type() == QEvent.Paint and self._pending_files:
+            QTimer.singleShot(0, self._open_pending)   # after this paint reaches the screen
+        return super().eventFilter(obj, e)
+
+    def _open_pending(self):
+        files, self._pending_files = self._pending_files, None
+        if files is None:
+            return
+        self.empty.removeEventFilter(self)
+        try:
+            self.open_files(files)
+        finally:
+            QApplication.restoreOverrideCursor()
+            self.empty.setText(EMPTY_TEXT)
 
     def open_files(self, files):
         for path in files:

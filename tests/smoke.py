@@ -588,6 +588,30 @@ server = appmod.InstanceServer(received.append)
 check("handoff reaches the running instance", appmod.send_to_running(["/a.pdf", "/b.pdf"]) and (pump(30) or True)
       and received == [["/a.pdf", "/b.pdf"]], str(received))
 check("app modules don't load QtNetwork", "PySide6.QtNetwork" not in sys.modules)
+os.environ.pop("DESKTOP_STARTUP_ID", None)
+appmod.finish_startup_notification()   # nothing to finish: returns quietly
+check("handoff without a startup id is quiet", True)
+
+# --- startup: the window first, then the document --------------------------------------------------------------
+appmod.defer_import("colorsys")         # a module nothing here has loaded yet
+import colorsys  # noqa: E402
+check("deferred module isn't loaded by an import", type(colorsys) is appmod.DeferredModule)
+check("deferred module loads on first use", colorsys.rgb_to_hsv(1, 0, 0) == (0, 1, 1)
+      and type(sys.modules["colorsys"]) is not appmod.DeferredModule)
+from kosmicpdf import theme  # noqa: E402
+check("icons drawn only at the sizes shown", theme.icon_sizes() == [12, 16], str(theme.icon_sizes()))
+shutil.copy(os.path.join(work, "second.pdf"), os.path.join(work, "startup.pdf"))   # not open anywhere yet
+w2 = window.MainWindow()
+w2.show()
+w2.open_when_shown([os.path.join(work, "startup.pdf")])
+check("window says what it's opening", w2.empty.text().startswith("Opening startup.pdf") and not w2.doc_tabs())
+pump(30)
+check("document opens once the window is drawn", len(w2.doc_tabs()) == 1 and w2.empty.text() == window.EMPTY_TEXT
+      and QApplication.overrideCursor() is None, f"{len(w2.doc_tabs())} tabs, {w2.empty.text()!r}")
+for tab in w2.doc_tabs():
+    tab.pdoc.modified = False
+w2.close()
+pump()
 
 # --- page number field ----------------------------------------------------------------------------------------
 w.tabs.setCurrentWidget(t); pump()
