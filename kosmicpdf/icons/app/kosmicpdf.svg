@@ -1,8 +1,14 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
+  <defs>
+    <linearGradient id="kosmos" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0.15" stop-color="#88c0d0"/><stop offset="0.85" stop-color="#ebcb8b"/>
+    </linearGradient>
+  </defs>
   <g transform="translate(0.8 0.8) scale(10.6)" stroke-linecap="round" stroke-linejoin="round">
-    <path d="M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z" transform="translate(0 0.45)" fill="#000" fill-opacity="0.2" stroke="#000" stroke-opacity="0.2" stroke-width="2"/>
-    <path d="M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z" fill="#c03630" stroke="#c03630" stroke-width="2"/>
-    <path d="M14 2v5a1 1 0 0 0 1 1h5z" fill="#f36961" stroke="#f36961" stroke-width="1"/>
-    <g fill="none" stroke="#ffffff" stroke-width="1.6"><path d="M10 9H8"/><path d="M16 13H8"/><path d="M16 17H8"/></g>
+    <path d="M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z" transform="translate(0 0.45)" fill="#000" fill-opacity="0.18" stroke="#000" stroke-opacity="0.18" stroke-width="2"/>
+    <path d="M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z" fill="url(#kosmos)" stroke="url(#kosmos)" stroke-width="2"/>
+    <path d="M14 1A3.4 3.4 0 0 1 16.411 2.003L19.996 5.587A3.4 3.4 0 0 1 21 8H15a1 1 0 0 1-1-1z" fill="#eceff4" fill-opacity="0.6"/>
+    <path d="M9.4 8.3Q9.928 11.072 12.7 11.6Q9.928 12.128 9.4 14.899999999999999Q8.872 12.128 6.1000000000000005 11.6Q8.872 11.072 9.4 8.3Z" fill="#2e3440"/>
+    <g fill="none" stroke="#2e3440" stroke-width="1.6"><path d="M8 17h8"/><path d="M14.2 13h1.8"/></g>
   </g>
 </svg>
