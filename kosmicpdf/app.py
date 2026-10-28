@@ -10,9 +10,17 @@ from PySide6.QtGui import QIcon
 from PySide6.QtNetwork import QLocalServer, QLocalSocket
 from PySide6.QtWidgets import QApplication
 
+from . import __version__
+from .theme import follow_color_scheme
 from .window import WINDOWS, MainWindow
 
-SERVER_NAME = f"kosmicpdf-{os.getuid()}"
+# Inside a Flatpak each launch gets its own /tmp, so put the single-instance socket
+# in the app's runtime folder, which all of its sandboxed copies share.
+FLATPAK_ID = os.environ.get("FLATPAK_ID")
+if FLATPAK_ID and os.environ.get("XDG_RUNTIME_DIR"):
+    SERVER_NAME = os.path.join(os.environ["XDG_RUNTIME_DIR"], "app", FLATPAK_ID, "kosmicpdf.sock")
+else:
+    SERVER_NAME = f"kosmicpdf-{os.getuid()}"
 
 
 def send_to_running(files):
@@ -38,8 +46,10 @@ def main():
     files = [os.path.abspath(a) for a in sys.argv[1:] if not a.startswith("-")]
     app = QApplication(sys.argv)
     app.setApplicationName("Kosmic PDF")
-    app.setDesktopFileName("kosmicpdf")
+    app.setApplicationVersion(__version__)
+    app.setDesktopFileName(FLATPAK_ID or "kosmicpdf")   # matches the installed .desktop file
     app.setWindowIcon(app_icon())
+    follow_color_scheme(app)
     if "--new-instance" not in sys.argv and send_to_running(files):
         return 0
 

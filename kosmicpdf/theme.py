@@ -19,6 +19,49 @@ ICON_STROKE = 1.5      # Lucide line width in its 24-unit grid; its default of 2
 ICON_OPACITY = 1.0
 
 
+def kosmos_dark_palette():
+    """A dark palette in the Kosmos colours (kosmos.law: night, snow, frost)."""
+    night, deep, rule, dim, text, frost = "#2e3440", "#3b4252", "#434c5e", "#aab3c5", "#d8dee9", "#88c0d0"
+    pal = QPalette()
+    for role, c in ((QPalette.Window, night), (QPalette.WindowText, text), (QPalette.Base, deep),
+                    (QPalette.AlternateBase, rule), (QPalette.Text, text), (QPalette.Button, deep),
+                    (QPalette.ButtonText, text), (QPalette.ToolTipBase, deep), (QPalette.ToolTipText, text),
+                    (QPalette.PlaceholderText, dim), (QPalette.Highlight, frost),
+                    (QPalette.HighlightedText, night), (QPalette.Link, frost), (QPalette.BrightText, "#ffffff"),
+                    (QPalette.Light, rule), (QPalette.Midlight, rule), (QPalette.Mid, rule),
+                    (QPalette.Dark, "#242933"), (QPalette.Shadow, "#1c2027")):
+        pal.setColor(role, QColor(c))
+    for role in (QPalette.WindowText, QPalette.Text, QPalette.ButtonText):
+        pal.setColor(QPalette.Disabled, role, QColor(dim))
+    return pal
+
+
+def choose_palette(dark_wanted, platform_palette):
+    """The platform's palette, unless the desktop wants dark but the palette is light.
+
+    That happens inside a Flatpak when the desktop's GTK theme isn't available
+    to the sandbox: Qt falls back to a light default even in dark mode.
+    """
+    if dark_wanted and platform_palette.color(QPalette.Window).lightness() >= 128:
+        return kosmos_dark_palette()
+    return platform_palette
+
+
+def follow_color_scheme(app):
+    """Apply choose_palette() now and whenever the desktop switches light/dark."""
+    hints = app.styleHints()
+
+    def update(*_):
+        app.setPalette(QPalette())                 # back to the platform's own palette
+        dark = hints.colorScheme() == Qt.ColorScheme.Dark
+        chosen = choose_palette(dark, app.palette())
+        if chosen is not app.palette():
+            app.setPalette(chosen)
+
+    hints.colorSchemeChanged.connect(update)
+    update()
+
+
 class Colors:
     def __init__(self, palette=None):
         pal = palette or QApplication.palette()

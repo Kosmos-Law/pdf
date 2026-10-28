@@ -569,6 +569,15 @@ w.close_tab(w.tab)
 w.fill_recent_menu()
 check("Clear empties the list", window.recent_files() == [] and not w.recent_menu.actions()[0].isEnabled())
 
+# --- dark-mode fallback (for Flatpak, when the desktop theme isn't visible) --------------------------------------
+from PySide6.QtGui import QColor, QPalette as _QP  # noqa: E402
+from kosmicpdf.theme import choose_palette  # noqa: E402
+light = _QP(); light.setColor(_QP.Window, QColor("#faf9f8"))
+dark_ok = _QP(); dark_ok.setColor(_QP.Window, QColor("#333339"))
+check("dark desktop + light palette -> Kosmos dark palette",
+      choose_palette(True, light).color(_QP.Window).name() == "#2e3440")
+check("palette kept when it already matches", choose_palette(True, dark_ok) is dark_ok and choose_palette(False, light) is light)
+
 # --- page number field ----------------------------------------------------------------------------------------
 w.tabs.setCurrentWidget(t); pump()
 w.page_box.setText("4")

@@ -3,7 +3,7 @@ import os
 import tempfile
 
 import pymupdf as fitz
-from PySide6.QtCore import QByteArray, QEvent, QMimeData, QPoint, QProcess, QSize, Qt, QTimer
+from PySide6.QtCore import QByteArray, QEvent, QMimeData, QPoint, QProcess, QSize, Qt, QTimer, qVersion
 from PySide6.QtGui import (QAction, QActionGroup, QCursor, QDrag, QGuiApplication, QIntValidator, QPalette, QKeySequence,
                            QMouseEvent)
 from PySide6.QtWidgets import (QApplication, QComboBox, QDoubleSpinBox, QFileDialog, QHBoxLayout,
@@ -1042,6 +1042,7 @@ class MainWindow(QMainWindow):
             self.statusBar().showMessage(f"Redactions applied on {pages} page(s). Save to make them permanent.", 8000)
 
     def about(self):
-        QMessageBox.about(self, "Kosmic PDF", "Kosmic PDF\nA lightweight PDF viewer and editor.\n\n"
-                          f"PyMuPDF {fitz.VersionBind}, Qt {QApplication.instance().applicationVersion() or ''}\n"
-                          "OCR and PDF/A by OCRmyPDF, Tesseract and Ghostscript.")
+        QMessageBox.about(self, "Kosmic PDF", f"Kosmic PDF {QApplication.instance().applicationVersion()}\n"
+                          "A lightweight PDF viewer and editor.\n\n"
+                          f"PyMuPDF {fitz.VersionBind}, Qt {qVersion()}\n"
+                          "OCR and PDF/A by OCRmyPDF and Tesseract.")

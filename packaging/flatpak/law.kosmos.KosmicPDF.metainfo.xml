@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>law.kosmos.KosmicPDF</id>
+  <name>Kosmic PDF</name>
+  <summary>View, organise, annotate and redact PDFs</summary>
+  <developer id="law.kosmos">
+    <name>Kosmos</name>
+  </developer>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>AGPL-3.0-or-later</project_license>
+  <description>
+    <p>
+      Kosmic PDF is a lightweight, free and open-source PDF viewer and editor,
+      made by Kosmos for law practice.
+    </p>
+    <ul>
+      <li>Reorder, rotate, copy and paste pages with drag and drop, including between files</li>
+      <li>Open several PDFs in tabs, and drag tabs into windows of their own</li>
+      <li>Highlight, type notes onto pages, and select and copy text</li>
+      <li>Redact text and areas permanently, and stamp Bates numbers</li>
+      <li>Make scanned PDFs searchable with OCR, and convert to PDF/A</li>
+      <li>Combine files, turn images into PDFs, and flatten annotations</li>
+    </ul>
+  </description>
+  <launchable type="desktop-id">law.kosmos.KosmicPDF.desktop</launchable>
+  <url type="homepage">https://kosmos.law/</url>
+  <categories>
+    <category>Office</category>
+    <category>Viewer</category>
+  </categories>
+  <content_rating type="oars-1.1"/>
+  <branding>
+    <color type="primary" scheme_preference="light">#88c0d0</color>
+    <color type="primary" scheme_preference="dark">#2e3440</color>
+  </branding>
+  <releases>
+    <release version="0.1.1" date="2026-10-28">
+      <description>
+        <p>Follows the desktop's dark mode even when its theme isn't available to the Flatpak.</p>
+      </description>
+    </release>
+    <release version="0.1.0" date="2026-10-28">
+      <description>
+        <p>First release.</p>
+      </description>
+    </release>
+  </releases>
+</component>
