@@ -37,7 +37,7 @@ def short_folder(path):
     return os.sep.join(parts[-2:]) if len(parts) > 2 else os.sep.join(parts)
 
 
-# Lucide icon for each action (bundled in pdfdesk/icons).
+# Lucide icon for each action (bundled in kosmicpdf/icons).
 LUCIDE = {
     "open": "folder-open", "save": "save", "save_as": "save", "close_tab": "x", "new_window": "app-window",
     "combine": "combine", "images": "image", "quit": "log-out", "undo": "undo-2", "redo": "redo-2",
@@ -191,7 +191,7 @@ class DocTab(QWidget):
             self.insert_pdf_bytes(data, at)
         elif mime.hasImage():
             img = QGuiApplication.clipboard().image()
-            path = os.path.join(tempfile.mkdtemp(prefix="pdfdesk-"), "clipboard.png")
+            path = os.path.join(tempfile.mkdtemp(prefix="kosmicpdf-"), "clipboard.png")
             img.save(path)
             self.insert_files([path], at)
         elif mime.hasUrls():
@@ -320,7 +320,7 @@ class ExternalJob:
 
     def __init__(self, win, tab, args, label):
         self.win, self.tab, self.label = win, tab, label
-        self.tmp = tempfile.TemporaryDirectory(prefix="pdfdesk-")
+        self.tmp = tempfile.TemporaryDirectory(prefix="kosmicpdf-")
         self.src = os.path.join(self.tmp.name, "in.pdf")
         self.dst = os.path.join(self.tmp.name, "out.pdf")
         with open(self.src, "wb") as f:
@@ -476,7 +476,7 @@ class MainWindow(QMainWindow):
         A("flatten", "&Flatten Annotations and Forms", self.flatten)
         A("redact_search", "Mark Text for Redaction…", self.redact_search)
         A("apply_redactions", "Apply Redactions", self.apply_redactions, tip="Permanently remove everything marked for redaction")
-        A("about", "&About PDF Desk", self.about)
+        A("about", "&About Kosmic PDF", self.about)
 
         self.mode_group = QActionGroup(self)
         for name, text, key, tip in (
@@ -561,7 +561,7 @@ class MainWindow(QMainWindow):
     # --- state --------------------------------------------------------------
     def update_window_title(self):
         t = self.tab
-        self.setWindowTitle(f"{t.pdoc.display_name()} — PDF Desk" if t else "PDF Desk")
+        self.setWindowTitle(f"{t.pdoc.display_name()} — Kosmic PDF" if t else "Kosmic PDF")
 
     def update_state(self):
         has = self.tab is not None
@@ -749,7 +749,7 @@ class MainWindow(QMainWindow):
         drag.setPixmap(pm)
         drag.setHotSpot(QPoint(30, 10))
         if drag.exec(Qt.MoveAction) == Qt.IgnoreAction and tab.main_window() is self:
-            # Dropped outside every PDF Desk window: give it a window of its own.
+            # Dropped outside every Kosmic PDF window: give it a window of its own.
             self.move_tab_to_new_window(tab, QCursor.pos() - QPoint(60, 20))
 
     def accept_tab_drop(self, mime, index=-1):
@@ -1042,6 +1042,6 @@ class MainWindow(QMainWindow):
             self.statusBar().showMessage(f"Redactions applied on {pages} page(s). Save to make them permanent.", 8000)
 
     def about(self):
-        QMessageBox.about(self, "PDF Desk", "PDF Desk\nA lightweight PDF viewer and editor.\n\n"
+        QMessageBox.about(self, "Kosmic PDF", "Kosmic PDF\nA lightweight PDF viewer and editor.\n\n"
                           f"PyMuPDF {fitz.VersionBind}, Qt {QApplication.instance().applicationVersion() or ''}\n"
                           "OCR and PDF/A by OCRmyPDF, Tesseract and Ghostscript.")

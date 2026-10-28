@@ -1,4 +1,4 @@
-"""Render PDF Desk with a light and a dark palette, switching live. Run:
+"""Render Kosmic PDF with a light and a dark palette, switching live. Run:
 QT_QPA_PLATFORM=offscreen .venv/bin/python tests/render_themes.py OUTDIR
 """
 import os
@@ -8,7 +8,7 @@ from PySide6.QtGui import QColor, QPalette
 from PySide6.QtWidgets import QApplication
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from pdfdesk import window  # noqa: E402
+from kosmicpdf import window  # noqa: E402
 
 OUT = sys.argv[1]
 os.makedirs(OUT, exist_ok=True)
@@ -17,7 +17,7 @@ app = QApplication(sys.argv)
 # Keep test runs out of the real settings (recent files, last folder, Bates numbers).
 from PySide6.QtCore import QSettings  # noqa: E402
 import tempfile  # noqa: E402
-QSettings.setPath(QSettings.NativeFormat, QSettings.UserScope, tempfile.mkdtemp(prefix="pdfdesk-test-settings-"))
+QSettings.setPath(QSettings.NativeFormat, QSettings.UserScope, tempfile.mkdtemp(prefix="kosmicpdf-test-settings-"))
 app.setStyle("Fusion")
 
 

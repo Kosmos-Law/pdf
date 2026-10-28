@@ -1,11 +1,11 @@
-# PDF Desk
+# Kosmic PDF
 
 A lightweight, free and open-source PDF viewer and editor for Linux, built with
 Qt (PySide6) and PyMuPDF. OCR and PDF/A use OCRmyPDF, Tesseract and Ghostscript.
 
 ## Running
 
-    ./pdfdesk.sh [files...]
+    ./kosmicpdf.sh [files...]
 
 Only one copy runs at a time: opening another PDF (from the file manager, say)
 adds a tab to the running window, so tabs and pages can be dragged between all
@@ -50,12 +50,12 @@ file completely, so redacted content does not linger in the file.
 
 ## Testing
 
-    QT_QPA_PLATFORM=offscreen .venv/bin/python tests/smoke.py /tmp/pdfdesk-test
+    QT_QPA_PLATFORM=offscreen .venv/bin/python tests/smoke.py /tmp/kosmicpdf-test
 
 ## Licence
 
-PyMuPDF is AGPL-3.0, so PDF Desk is distributed under AGPL-3.0 as well: free to
+PyMuPDF is AGPL-3.0, so Kosmic PDF is distributed under AGPL-3.0 as well: free to
 use, change and share, provided the source travels with it.
 
 Toolbar and menu icons are from [Lucide](https://lucide.dev) (ISC licence,
-`pdfdesk/icons/LICENSE-lucide`), tinted to match the desktop's light or dark theme.
+`kosmicpdf/icons/LICENSE-lucide`), tinted to match the desktop's light or dark theme.

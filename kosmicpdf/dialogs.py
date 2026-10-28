@@ -16,7 +16,7 @@ POSITIONS = ["Bottom right", "Bottom center", "Bottom left", "Top right", "Top c
 
 
 def settings():
-    return QSettings("pdfdesk", "pdfdesk")
+    return QSettings("kosmicpdf", "kosmicpdf")
 
 
 def stamp_bates(doc, start, prefix, digits, suffix, position, font_size, margin, background):

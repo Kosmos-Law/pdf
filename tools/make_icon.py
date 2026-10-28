@@ -1,4 +1,4 @@
-"""Generate the PDF Desk app icon (SVG plus PNGs) into pdfdesk/icons/app/.
+"""Generate the Kosmic PDF app icon (SVG plus PNGs) into kosmicpdf/icons/app/.
 
 Lucide's "file-text" page, filled in the reds of the Papirus PDF icon (dark red
 page, lighter folded corner) with white text lines and Papirus's faint drop
@@ -14,7 +14,7 @@ from PySide6.QtCore import QByteArray, QRectF, Qt
 from PySide6.QtGui import QGuiApplication, QImage, QPainter
 from PySide6.QtSvg import QSvgRenderer
 
-OUT = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "pdfdesk", "icons", "app")
+OUT = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "kosmicpdf", "icons", "app")
 PAGE_RED, FOLD_RED, INK = "#c03630", "#f36961", "#ffffff"   # Papirus application-pdf colours
 
 # Lucide file-text, in its 24-unit grid.
@@ -42,7 +42,7 @@ def svg(line_width):
 def main():
     QGuiApplication(sys.argv)
     os.makedirs(OUT, exist_ok=True)
-    with open(os.path.join(OUT, "pdfdesk.svg"), "w") as f:
+    with open(os.path.join(OUT, "kosmicpdf.svg"), "w") as f:
         f.write(svg(1.6))
     for size, line_width in ((16, 2.2), (24, 2.0), (32, 1.9), (48, 1.75), (64, 1.6), (128, 1.6), (256, 1.6)):
         img = QImage(size, size, QImage.Format_ARGB32_Premultiplied)
@@ -51,7 +51,7 @@ def main():
         p.setRenderHint(QPainter.Antialiasing)
         QSvgRenderer(QByteArray(svg(line_width).encode())).render(p, QRectF(0, 0, size, size))
         p.end()
-        img.save(os.path.join(OUT, f"pdfdesk-{size}.png"))
+        img.save(os.path.join(OUT, f"kosmicpdf-{size}.png"))
     print("wrote", OUT)
 
 

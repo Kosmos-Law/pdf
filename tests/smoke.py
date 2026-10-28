@@ -1,4 +1,4 @@
-"""Headless end-to-end check of PDF Desk. Run:
+"""Headless end-to-end check of Kosmic PDF. Run:
 QT_QPA_PLATFORM=offscreen .venv/bin/python tests/smoke.py OUTDIR
 """
 import os
@@ -11,8 +11,8 @@ from PySide6.QtGui import QGuiApplication, QMouseEvent
 from PySide6.QtWidgets import QApplication, QMessageBox
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from pdfdesk import dialogs, window  # noqa: E402
-from pdfdesk.core import PdfDocument, pages_mime  # noqa: E402
+from kosmicpdf import dialogs, window  # noqa: E402
+from kosmicpdf.core import PdfDocument, pages_mime  # noqa: E402
 
 OUT = sys.argv[1]
 SAMPLES = os.path.join(os.path.dirname(os.path.abspath(__file__)), "samples")
@@ -21,7 +21,7 @@ app = QApplication(sys.argv)
 # Keep test runs out of the real settings (recent files, last folder, Bates numbers).
 from PySide6.QtCore import QSettings  # noqa: E402
 import tempfile  # noqa: E402
-QSettings.setPath(QSettings.NativeFormat, QSettings.UserScope, tempfile.mkdtemp(prefix="pdfdesk-test-settings-"))
+QSettings.setPath(QSettings.NativeFormat, QSettings.UserScope, tempfile.mkdtemp(prefix="kosmicpdf-test-settings-"))
 QMessageBox.question = staticmethod(lambda *a, **k: QMessageBox.Yes)   # auto-confirm
 results = []
 
@@ -160,7 +160,7 @@ for pg in (0, 2):
     p = rr.topLeft() + QPoint(100, 60)
     mouse(v.canvas, "press", p); pump()
     ed = v.canvas.findChildren(window.QWidget)
-    from pdfdesk.pageview import TypewriterEditor  # noqa: E402
+    from kosmicpdf.pageview import TypewriterEditor  # noqa: E402
     ed = [e for e in v.canvas.findChildren(TypewriterEditor) if e.isVisible()][0]
     ed.setPlainText("Typed note\nsecond line")
     ed.commit(); pump()
@@ -228,7 +228,7 @@ d.close()
 
 # --- combine PDF + image ----------------------------------------------------------------------------------
 out = fitz.open()
-from pdfdesk.core import load_any  # noqa: E402
+from kosmicpdf.core import load_any  # noqa: E402
 out.insert_pdf(load_any(os.path.join(work, "second.pdf")))
 out.insert_pdf(load_any(os.path.join(work, "scan.png"), "Letter"))
 check("combine pdf + image", out.page_count == 4 and out[3].rect == fitz.Rect(0, 0, 612, 792))
@@ -277,7 +277,7 @@ w.tabs.setCurrentWidget(t)
 pump(50)
 th = t.thumbs
 check("thumbnail viewport accepts drops", th.viewport().acceptDrops() and th.dragEnabled())
-from pdfdesk import thumbs as thumbs_mod  # noqa: E402
+from kosmicpdf import thumbs as thumbs_mod  # noqa: E402
 started = []
 
 
@@ -295,7 +295,7 @@ for dy in (5, 15, 30, 60):
     mouse(th.viewport(), "move", c + QPoint(0, dy))
 mouse(th.viewport(), "release", c + QPoint(0, 60))
 thumbs_mod.QDrag = real_drag
-check("mouse drag on a thumbnail starts a page drag", started and started[0].hasFormat("application/x-pdfdesk-pages"))
+check("mouse drag on a thumbnail starts a page drag", started and started[0].hasFormat("application/x-kosmicpdf-pages"))
 
 # --- drop mark before the first page, and auto-scroll near the edge ----------------------------------------------
 from PySide6.QtGui import QDragMoveEvent  # noqa: E402
@@ -341,7 +341,7 @@ check("new size applies to the open note", ed.font_size == 18 and v.editor is ed
 mouse(v.canvas, "press", v.page_rects[1].topLeft() + QPoint(300, 500)); pump(20)
 pg1 = t.pdoc.doc[1]
 notes = [a for a in pg1.annots() if a.type[0] == fitz.PDF_ANNOT_FREE_TEXT]
-from pdfdesk.core import parse_da_fontsize  # noqa: E402
+from kosmicpdf.core import parse_da_fontsize  # noqa: E402
 check("clicking the page saves the note at the new size",
       len(notes) == 1 and parse_da_fontsize(t.pdoc.doc, notes[0]) == 18, str([a.info.get("content") for a in notes]))
 if v.editor:
@@ -376,7 +376,7 @@ check("undo brings back the original note, visible", note_on(1)[0] == text0 and 
 w.set_mode("select")
 
 # --- firm highlight colours, eraser, recolour, and selecting highlighted text ---------------------------------
-from pdfdesk.pageview import HIGHLIGHT_COLORS  # noqa: E402
+from kosmicpdf.pageview import HIGHLIGHT_COLORS  # noqa: E402
 
 
 def highlights(i):

@@ -1,10 +1,10 @@
 [Desktop Entry]
 Type=Application
-Name=PDF Desk
+Name=Kosmic PDF
 GenericName=PDF Viewer and Editor
 Comment=View, annotate, reorganise, OCR, redact and Bates-number PDFs
-Exec=/home/james/Dev/pdfdesk/pdfdesk.sh %F
-Icon=pdfdesk
+Exec=kosmicpdf.sh %F
+Icon=kosmicpdf
 Terminal=false
 Categories=Office;Viewer;
 MimeType=application/pdf;image/png;image/jpeg;image/tiff;

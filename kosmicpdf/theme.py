@@ -12,7 +12,7 @@ from PySide6.QtSvg import QSvgRenderer
 from PySide6.QtWidgets import QApplication
 
 ICON_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "icons")
-CACHE_DIR = os.path.join(os.environ.get("XDG_CACHE_HOME", os.path.expanduser("~/.cache")), "pdfdesk", "icons")
+CACHE_DIR = os.path.join(os.environ.get("XDG_CACHE_HOME", os.path.expanduser("~/.cache")), "kosmicpdf", "icons")
 ICON_SIZES = (16, 18, 20, 24, 32, 36, 40, 48)
 TOOLBAR_ICON = 16      # px
 ICON_STROKE = 1.5      # Lucide line width in its 24-unit grid; its default of 2 looks heavy at this size

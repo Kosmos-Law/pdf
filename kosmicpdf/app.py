@@ -12,7 +12,7 @@ from PySide6.QtWidgets import QApplication
 
 from .window import WINDOWS, MainWindow
 
-SERVER_NAME = f"pdfdesk-{os.getuid()}"
+SERVER_NAME = f"kosmicpdf-{os.getuid()}"
 
 
 def send_to_running(files):
@@ -30,15 +30,15 @@ def app_icon():
     folder = os.path.join(os.path.dirname(os.path.abspath(__file__)), "icons", "app")
     icon = QIcon()
     for size in (16, 24, 32, 48, 64, 128, 256):
-        icon.addFile(os.path.join(folder, f"pdfdesk-{size}.png"))
+        icon.addFile(os.path.join(folder, f"kosmicpdf-{size}.png"))
     return icon
 
 
 def main():
     files = [os.path.abspath(a) for a in sys.argv[1:] if not a.startswith("-")]
     app = QApplication(sys.argv)
-    app.setApplicationName("PDF Desk")
-    app.setDesktopFileName("pdfdesk")
+    app.setApplicationName("Kosmic PDF")
+    app.setDesktopFileName("kosmicpdf")
     app.setWindowIcon(app_icon())
     if "--new-instance" not in sys.argv and send_to_running(files):
         return 0
