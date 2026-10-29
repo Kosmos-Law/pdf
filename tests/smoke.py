@@ -782,7 +782,8 @@ discard = lstyle.standardIcon(QStyle.SP_DialogDiscardButton)
 question = lstyle.standardIcon(QStyle.SP_MessageBoxQuestion)
 check("dialog buttons and message boxes get Lucide icons, drawn once",
       not discard.isNull() and discard.cacheKey() == lstyle.standardIcon(QStyle.SP_DialogDiscardButton).cacheKey()
-      and QSize(32, 32) in question.availableSizes(), str(question.availableSizes()))
+      and QSize(24, 24) in question.availableSizes()
+      and lstyle.pixelMetric(QStyle.PM_MessageBoxIconSize) == 24, str(question.availableSizes()))
 
 # --- page number field ----------------------------------------------------------------------------------------
 w.tabs.setCurrentWidget(t); pump()

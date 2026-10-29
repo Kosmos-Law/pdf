@@ -156,7 +156,7 @@ MESSAGE_ICONS = {      # the symbol beside a message box's text, and its colour 
     QStyle.SP_MessageBoxQuestion: ("circle-question-mark", None), QStyle.SP_MessageBoxInformation: ("info", None),
     QStyle.SP_MessageBoxWarning: ("triangle-alert", WARNING), QStyle.SP_MessageBoxCritical: ("circle-x", BADGE),
 }
-MESSAGE_ICON = 32      # px, as Qt lays out message boxes
+MESSAGE_ICON = 24      # px, the symbol beside a message box's text (Qt's own is 32, which looms over one line)
 # Qt sets a button's icon right against its text; dialog buttons' icons carry this much
 # clear space on their right (px), and the buttons show icons this much wider to fit it.
 DIALOG_ICON_GAP = 5
@@ -189,6 +189,11 @@ class LucideStyle(QProxyStyle):
         if key not in self._icons:
             self._icons[key] = lucide(name, color, sizes=sizes, gap=gap)
         return self._icons[key]
+
+    def pixelMetric(self, metric, option=None, widget=None):
+        if metric == QStyle.PM_MessageBoxIconSize:
+            return MESSAGE_ICON
+        return super().pixelMetric(metric, option, widget)
 
     def polish(self, widget):
         super().polish(widget)
@@ -278,6 +283,8 @@ QToolButton {{ border:1px solid transparent; border-radius:5px; padding:5px; }}
 QToolButton:hover {{ background:{hover}; }}
 QToolButton:pressed {{ background:{press}; }}
 QToolButton:checked {{ background:{c.rgba(c.accent, 55)}; border-color:{c.rgba(c.accent, 130)}; }}
+QLabel#qt_msgboxex_icon_label {{ padding:1px 6px 0 2px; }}
+QLabel#qt_msgbox_label {{ padding:3px 8px 16px 0; }}
 QToolBar#findBar {{ padding:3px 6px; }}
 QLineEdit[notFound="true"] {{ background:{c.redact_band.name()}; border-color:{c.redact_line.name()}; }}
 QToolBar#redactBar {{ background:{c.redact_band.name()}; border-bottom:1px solid {c.redact_line.name()}; padding:3px 6px; }}
