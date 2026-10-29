@@ -48,7 +48,10 @@ flatpak remote-add --user --if-not-exists flathub https://dl.flathub.org/repo/fl
 echo "==> Building $app and adding it to $site/repo"
 # Lowest CPU and disk priority, so compiling the OCR engine (first build only;
 # later builds reuse the cached modules) doesn't make the desktop sluggish.
+# --disable-rofiles-fuse: copy cached files rather than mount them, which needs FUSE and
+# isn't allowed everywhere (a sandboxed shell, some containers); the result is the same.
 nice -n 19 ionice -c 3 flatpak-builder --user --install-deps-from=flathub --force-clean --state-dir="$cache/state" \
+    --disable-rofiles-fuse \
     --default-branch="$branch" --repo="$site/repo" --gpg-sign="$key" --gpg-homedir="$GNUPGHOME" \
     "$cache/build-dir" "$manifest"
 
