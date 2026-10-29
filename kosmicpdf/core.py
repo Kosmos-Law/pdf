@@ -27,6 +27,21 @@ UNDO_LIMIT = 20
 SCAN_IMAGE_SHARE = 0.25   # images covering this much of a page, with no text, look like a scan
 
 
+REDACT_MARK = (0.18, 0.2, 0.25)   # slate
+
+
+def mark_redaction(page, rect):
+    """Mark rect on page for redaction. Once redactions are applied, the content under
+    it is removed and a black box left in its place. Until then the mark is drawn
+    lightly: a faint slate outline, without the red box and cross MuPDF draws by default
+    (Kosmic PDF lays a see-through wash over it as well; see PageView.paint_overlays)."""
+    a = page.add_redact_annot(fitz.Rect(rect), fill=(0, 0, 0))
+    a.set_colors(stroke=REDACT_MARK)
+    a.set_opacity(0.45)
+    a.update(cross_out=False)
+    return a
+
+
 def page_needs_ocr(page):
     """True for a page that looks like a scan with no text layer: no text that can be
     selected or searched, and an image covering a good part of the page. (A blank page,
@@ -138,6 +153,7 @@ class PdfDocument(QObject):
         self.doc = doc if doc is not None else fitz.open()
         self.path = path
         self.title = title or (os.path.basename(path) if path else "Untitled")
+        self.folder = os.path.dirname(path) if path else None   # where Save As starts
         self.was_encrypted = bool(self.doc.is_encrypted)
         self.modified = False
         self.generation = 0           # bumped whenever cached renders may be stale wholesale
@@ -284,15 +300,19 @@ class PdfDocument(QObject):
     def redaction_count(self):
         return sum(1 for page in self.doc for a in page.annots(types=[fitz.PDF_ANNOT_REDACT]))
 
-    def apply_redactions(self):
-        self.checkpoint()
-        changed = []
-        for page in self.doc:
+    def redacted_copy(self):
+        """A new, unsaved document with everything marked for redaction removed, named
+        "<title> - Redacted.pdf" for the same folder. This document is left as it is, so
+        redacting never changes the original; and the copy has no undo history, so the
+        removed content can't be brought back into it."""
+        doc = fitz.open("pdf", self.doc.tobytes())
+        for page in doc:
             if any(True for _ in page.annots(types=[fitz.PDF_ANNOT_REDACT])):
                 page.apply_redactions(images=fitz.PDF_REDACT_IMAGE_PIXELS)
-                changed.append(page.number)
-        self.edited(changed)
-        return len(changed)
+        copy = PdfDocument(doc, title=f"{os.path.splitext(self.title)[0]} - Redacted.pdf")
+        copy.folder = self.folder
+        copy.set_modified(True)
+        return copy
 
     def flatten(self):
         self.checkpoint()
@@ -311,6 +331,7 @@ class PdfDocument(QObject):
         os.replace(tmp, path)
         self.path = path
         self.title = os.path.basename(path)
+        self.folder = os.path.dirname(path)
         self.generation += 1          # garbage collection may renumber page xrefs
         self._versions.clear()
         self.modified = None          # force the signal so the tab title refreshes

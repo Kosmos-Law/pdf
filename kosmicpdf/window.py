@@ -12,7 +12,7 @@ from PySide6.QtWidgets import (QApplication, QComboBox, QDoubleSpinBox, QFileDia
                                QToolBar, QToolButton, QVBoxLayout, QWidget)
 
 from . import dialogs
-from .core import MIME_PAGES, MIME_TAB, PdfDocument, is_image, load_any, mime_pdf_bytes, pages_mime
+from .core import MIME_PAGES, MIME_TAB, PdfDocument, is_image, load_any, mark_redaction, mime_pdf_bytes, pages_mime
 from .pageview import HIGHLIGHT_COLORS, PageView
 from . import theme
 from .theme import Colors, lucide, stylesheet, swatch
@@ -50,6 +50,7 @@ LUCIDE = {
     "zoom_in": "zoom-in", "zoom_out": "zoom-out", "fit_width": "move-horizontal", "fit_page": "maximize",
     "thumbs": "panel-left", "bates": "hash", "ocr": "scan-text", "pdfa": "file-check", "flatten": "layers",
     "redact_search": "text-search", "apply_redactions": "check-check", "redact_done": "x", "about": "info",
+    "redact_text": "text-select", "redact_area": "square-dashed",
     "mode_select": "text-cursor", "mode_highlight": "highlighter", "mode_typewriter": "type", "mode_redact": "eye-off",
 }
 
@@ -488,6 +489,7 @@ class MainWindow(QMainWindow):
         self.tabs = QTabWidget()
         self.tabs.setTabBar(DetachableTabBar(self))
         self.tabs.setDocumentMode(True)
+        self.tabs.tabBar().setDrawBase(False)   # Fusion's bevelled base line, which the tabs cut into (document mode turns it on)
         self.tabs.tabCloseRequested.connect(lambda i: self.close_tab(self.tabs.widget(i)))
         self.tabs.currentChanged.connect(self._tab_changed)
         self.tabs.tabBar().setContextMenuPolicy(Qt.CustomContextMenu)
@@ -602,8 +604,16 @@ class MainWindow(QMainWindow):
         A("pdfa", "Convert to &PDF/A…", self.pdfa)
         A("flatten", "&Flatten Annotations and Forms", self.flatten)
         A("redact_search", "Mark Text for Redaction…", self.redact_search).setIconText("Mark Text…")
-        A("apply_redactions", "Apply Redactions", self.apply_redactions, tip="Permanently remove everything marked for redaction")
+        A("apply_redactions", "Save Redacted Copy…", self.apply_redactions,
+          tip="Save a copy with everything marked removed for good; the original stays as it is")
         A("redact_done", "Done", lambda: self.set_mode("select"), tip="Finish redacting and go back to selecting text")
+        self.redact_by_group = QActionGroup(self)
+        for name, text, tip in (("text", "Text", "Select the text to redact, across lines if need be"),
+                                ("area", "Area", "Draw a box around anything to redact, such as a picture or signature")):
+            a = A(f"redact_{name}", text, lambda checked=False, n=name: self.set_redact_by(n), tip=tip, checkable=True)
+            self.redact_by_group.addAction(a)
+        self.redact_by = "text"
+        self.actions_by_name["redact_text"].setChecked(True)
         A("about", "&About Kosmic PDF", self.about)
 
         self.mode_group = QActionGroup(self)
@@ -688,6 +698,7 @@ class MainWindow(QMainWindow):
             if b.defaultAction() in labelled:
                 b.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
         self.build_redact_bar()
+        self.set_redact_by("text")
         self.findbar = FindBar(self)
         self.findbar.visibilityChanged.connect(a["find_bar"].setChecked)
         self.addToolBarBreak()
@@ -708,7 +719,12 @@ class MainWindow(QMainWindow):
         self.addToolBar(bar)
         self.redact_icon = QLabel()
         bar.addWidget(self.redact_icon)
-        bar.addWidget(QLabel("<b>Redacting.</b> Drag a box around anything that should be removed."))
+        bar.addWidget(QLabel("<b>Redacting</b>"))
+        bar.addSeparator()
+        bar.addAction(a["redact_text"])
+        bar.addAction(a["redact_area"])
+        self.redact_hint = QLabel()
+        bar.addWidget(self.redact_hint)
         bar.addSeparator()
         bar.addAction(a["redact_search"])
         spacer = QWidget()
@@ -719,6 +735,16 @@ class MainWindow(QMainWindow):
         bar.addAction(a["apply_redactions"])
         bar.addAction(a["redact_done"])
         bar.hide()
+
+    def set_redact_by(self, how):
+        """Redact by selecting text, or by drawing a box around an area."""
+        self.redact_by = how
+        self.actions_by_name[f"redact_{how}"].setChecked(True)
+        self.redact_hint.setText("  Select the text to remove.  " if how == "text"
+                                 else "  Draw a box around anything to remove.  ")
+        for t in self.doc_tabs():
+            t.view.redact_by = how
+            t.view.clear_selection()
 
     def update_redact_bar(self):
         if not self.redact_bar.isVisible():
@@ -836,6 +862,7 @@ class MainWindow(QMainWindow):
         t.view.mode = self.mode
         t.view.font_size = self.font_size.value()
         t.view.hl_color = self.hl_color
+        t.view.redact_by = self.redact_by
         self.show_thumbs(t, self.actions_by_name["thumbs"].isChecked())
         t.view.apply_colors(self.colors)
         t.thumbs.apply_colors(self.colors)
@@ -1139,8 +1166,9 @@ class MainWindow(QMainWindow):
         tab = tab if isinstance(tab, DocTab) else self.tab
         if not tab:
             return False
-        start = tab.pdoc.path or os.path.join(dialogs.settings().value("last_dir", os.path.expanduser("~")),
-                                              tab.pdoc.title if tab.pdoc.title.endswith(".pdf") else tab.pdoc.title + ".pdf")
+        folder = tab.pdoc.folder or dialogs.settings().value("last_dir", os.path.expanduser("~"))
+        start = tab.pdoc.path or os.path.join(folder, tab.pdoc.title if tab.pdoc.title.endswith(".pdf")
+                                              else tab.pdoc.title + ".pdf")
         path, _ = QFileDialog.getSaveFileName(self, "Save As", start, "PDF files (*.pdf)")
         if not path:
             return False
@@ -1153,14 +1181,16 @@ class MainWindow(QMainWindow):
         if n:
             box = QMessageBox(QMessageBox.Warning, "Unapplied redactions",
                               f"{n} area(s) are marked for redaction but not yet applied, so the content "
-                              "underneath is still in the file.", parent=self)
-            apply = box.addButton("Apply and Save", QMessageBox.AcceptRole)
+                              "underneath is still in the file. Redactions are saved as a separate copy, "
+                              "so the original stays as it is.", parent=self)
+            copy = box.addButton("Save Redacted Copy…", QMessageBox.AcceptRole)
             box.addButton("Save with Marks Only", QMessageBox.DestructiveRole)
             box.addButton(QMessageBox.Cancel)
             box.exec()
-            if box.clickedButton() is apply:
-                tab.pdoc.apply_redactions()
-            elif box.clickedButton() is box.button(QMessageBox.Cancel):
+            if box.clickedButton() is copy:
+                self.save_redacted_copy(tab)
+                return False                # this document itself wasn't saved
+            if box.clickedButton() is box.button(QMessageBox.Cancel):
                 return False
         try:
             tab.pdoc.save(path)
@@ -1268,25 +1298,29 @@ class MainWindow(QMainWindow):
     def pdfa(self):
         if not self._need_ocrmypdf():
             return
-        if self.tab.pdoc.redaction_count() and not self._ask_apply_redactions("converting"):
+        if self.tab.pdoc.redaction_count() and not self._ask_redacted_copy("convert"):
             return
         dlg = dialogs.PdfaDialog(self)
         if dlg.exec():
             self.jobs.add(ExternalJob(self, self.tab, dlg.args(), "PDF/A conversion"))
 
-    def _ask_apply_redactions(self, doing):
+    def _ask_redacted_copy(self, doing):
+        """Before converting or flattening a document with unapplied marks: offer to do it
+        to a redacted copy (which becomes the current tab) instead, leaving the original as
+        it is. False if the user would rather not go on."""
         r = QMessageBox.question(self, "Unapplied redactions",
-                                 f"Some content is marked for redaction but not yet removed. Apply the redactions before {doing}?",
+                                 f"Some content is marked for redaction but not yet removed. Make a redacted copy, "
+                                 f"and {doing} that instead? The original stays as it is.",
                                  QMessageBox.Yes | QMessageBox.Cancel)
         if r == QMessageBox.Yes:
-            self.tab.pdoc.apply_redactions()
+            self.redacted_copy(self.tab)
             return True
         return False
 
     def flatten(self):
-        t = self.tab
-        if t.pdoc.redaction_count() and not self._ask_apply_redactions("flattening"):
+        if self.tab.pdoc.redaction_count() and not self._ask_redacted_copy("flatten"):
             return
+        t = self.tab
         r = QMessageBox.question(self, "Flatten", "Merge all annotations and form fields into the page content? "
                                  "They will no longer be editable (Undo is available until you close the file).")
         if r == QMessageBox.Yes:
@@ -1306,24 +1340,40 @@ class MainWindow(QMainWindow):
         t.pdoc.checkpoint()
         pages = set()
         for i, r in hits:
-            t.pdoc.doc[i].add_redact_annot(r, fill=(0, 0, 0))
+            mark_redaction(t.pdoc.doc[i], r)
             pages.add(i)
         t.pdoc.edited(sorted(pages))
         self.statusBar().showMessage(f"Marked {len(hits)} occurrence(s) on {len(pages)} page(s). "
-                                     "Review them, then Apply Redactions.", 10000)
+                                     "Review them, then Save Redacted Copy.", 10000)
 
     def apply_redactions(self):
+        """Save Redacted Copy: the marked content removed for good, in a copy."""
         t = self.tab
         n = t.pdoc.redaction_count()
         if not n:
-            QMessageBox.information(self, "Apply Redactions", "Nothing is marked for redaction yet. "
-                                    "Use the Redact tool to draw boxes, or Tools › Mark Text for Redaction.")
+            QMessageBox.information(self, "Save Redacted Copy", "Nothing is marked for redaction yet. "
+                                    "Select the text to redact, draw a box around an area, or use Mark Text.")
             return
-        r = QMessageBox.question(self, "Apply Redactions", f"Permanently remove the content under {n} marked area(s)? "
-                                 "Text, images and drawings beneath the marks are deleted, not just covered.")
+        r = QMessageBox.question(self, "Save Redacted Copy",
+                                 f"Save a copy with the content under {n} marked area(s) removed for good? "
+                                 "Text, images and drawings beneath the marks are deleted, not just covered. "
+                                 "The original stays as it is.")
         if r == QMessageBox.Yes:
-            pages = t.pdoc.apply_redactions()
-            self.statusBar().showMessage(f"Redactions applied on {pages} page(s). Save to make them permanent.", 8000)
+            self.save_redacted_copy(t)
+
+    def redacted_copy(self, t):
+        """Open a copy of tab t with its marked content removed, in a new tab beside it."""
+        tab = self.add_doc(t.pdoc.redacted_copy(), self.tabs.indexOf(t) + 1)
+        self.set_mode("select")
+        return tab
+
+    def save_redacted_copy(self, t):
+        tab = self.redacted_copy(t)
+        if self.save_as(tab):
+            self.statusBar().showMessage(f"Saved the redacted copy as {tab.pdoc.path}. "
+                                         f"{t.pdoc.title} is unchanged.", 10000)
+        else:
+            self.statusBar().showMessage("The redacted copy is open in its own tab, not yet saved.", 10000)
 
     def about(self):
         QMessageBox.about(self, "Kosmic PDF", f"Kosmic PDF {QApplication.instance().applicationVersion()}\n"

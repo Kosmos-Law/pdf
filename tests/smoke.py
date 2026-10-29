@@ -9,7 +9,7 @@ import pymupdf as fitz
 from PySide6.QtCore import QEvent, QPoint, QPointF, QSize, Qt, QTimer
 from PySide6.QtGui import QGuiApplication, QMouseEvent
 from PySide6.QtTest import QTest
-from PySide6.QtWidgets import QApplication, QMessageBox, QToolButton
+from PySide6.QtWidgets import QApplication, QFileDialog, QMessageBox, QToolButton
 
 if not os.environ.get("KOSMICPDF_TEST_INSTALLED"):   # set when testing an installed build (e.g. the Flatpak)
     sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -201,17 +201,61 @@ QTest.keyClick(w, Qt.Key_R)
 pump()
 check("R starts redacting and shows the redaction bar", w.mode == "redact" and w.redact_bar.isVisible()
       and w.redact_count.text().startswith("Nothing marked"), w.mode)
+check("redacting starts by selecting text", w.redact_by == "text" and v.redact_by == "text"
+      and w.actions_by_name["redact_text"].isChecked())
 r = text_pos(v, 0, "12345")
-mouse(v.canvas, "press", r.topLeft().toPoint() - QPoint(2, 2))
-mouse(v.canvas, "move", r.bottomRight().toPoint() + QPoint(2, 2))
-mouse(v.canvas, "release", r.bottomRight().toPoint() + QPoint(2, 2))
+mouse(v.canvas, "press", r.topLeft().toPoint() + QPoint(1, 4))
+mouse(v.canvas, "move", r.bottomRight().toPoint() - QPoint(1, 4))
+mouse(v.canvas, "release", r.bottomRight().toPoint() - QPoint(1, 4))
 check("redaction marked", t.pdoc.redaction_count() == 1)
 check("redaction bar counts the marks", w.redact_count.text().startswith("1 area marked"), w.redact_count.text())
+mark = next(t.pdoc.doc[0].annots(types=[fitz.PDF_ANNOT_REDACT]))
+check("a mark is drawn lightly: a faint slate outline, no red", mark.colors["stroke"] and max(mark.colors["stroke"]) < 0.3
+      and mark.opacity < 0.5, f"{mark.colors} {mark.opacity}")
+# Part of one line and on into the next, in one drag.
+words = t.pdoc.doc[0].get_text("words")
+end_of_line = next(k for k in range(len(words) - 1) if words[k][4] == "fox" and words[k + 1][4] == "jumps"
+                   and words[k][5:7] != words[k + 1][5:7])
+fox, jumps = fitz.Rect(words[end_of_line][:4]), fitz.Rect(words[end_of_line + 1][:4])
+a, b = v.to_canvas(0, fox), v.to_canvas(0, jumps)
+mouse(v.canvas, "press", a.topLeft().toPoint() + QPoint(1, 4))
+mouse(v.canvas, "move", b.bottomRight().toPoint() - QPoint(1, 4))
+mouse(v.canvas, "release", b.bottomRight().toPoint() - QPoint(1, 4))
+marks = [m.rect for m in t.pdoc.doc[0].annots(types=[fitz.PDF_ANNOT_REDACT])]
+check("selecting text across a line break marks just those words, one mark per line",
+      len(marks) == 3 and t.pdoc.doc[0].get_textbox(marks[-1]).strip() == "jumps"
+      and t.pdoc.doc[0].get_textbox(marks[-2]).strip() == "fox", str([t.pdoc.doc[0].get_textbox(m) for m in marks]))
+w.actions_by_name["redact_area"].trigger(); pump()
+check("Area switches to drawing a box", w.redact_by == "area" and v.redact_by == "area" and "box" in w.redact_hint.text())
+head = text_pos(v, 0, "sample")
+mouse(v.canvas, "press", head.topLeft().toPoint() - QPoint(4, 4))
+mouse(v.canvas, "move", head.bottomRight().toPoint() + QPoint(4, 4))
+mouse(v.canvas, "release", head.bottomRight().toPoint() + QPoint(4, 4))
+check("a box drawn in Area mode is marked", t.pdoc.redaction_count() == 4)
 w.redact_bar.grab().save(os.path.join(OUT, "02b-redact-bar.png"))
-before = t.pdoc.doc[0].get_text().count("12345")
-w.apply_redactions()
-after = t.pdoc.doc[0].get_text().count("12345")
-check("redaction removes text", after == before - 1 and t.pdoc.redaction_count() == 0, f"{before}->{after}")
+asked = []
+QFileDialog.getSaveFileName = staticmethod(lambda parent, title, start, *a: (asked.append(start) or start, ""))
+original_text, n_tabs = t.pdoc.doc[0].get_text(), w.tabs.count()
+w.apply_redactions(); pump()
+ct = w.tab
+want_path = os.path.join(work, "sample - Redacted.pdf")
+check("Save Redacted Copy saves a new copy beside the original, named for it",
+      ct is not t and w.tabs.count() == n_tabs + 1 and asked == [want_path] and ct.pdoc.path == want_path
+      and os.path.exists(want_path), f"{asked} {ct.pdoc.path}")
+saved = fitz.open(want_path)
+check("the copy has the marked content removed, and no marks left",
+      saved[0].get_text().count("12345") == original_text.count("12345") - 1
+      and not any(True for p in saved for _ in p.annots(types=[fitz.PDF_ANNOT_REDACT])))
+saved.close()
+check("the original is untouched: the same text, its marks still there",
+      t.pdoc.doc[0].get_text() == original_text and t.pdoc.redaction_count() == 4)
+check("the copy has no undo history to bring the text back", not ct.pdoc.can_undo())
+check("making the copy ends redacting", w.mode == "select" and w.redact_bar.isHidden())
+w.close_tab(ct); w.tabs.setCurrentWidget(t); pump()
+for _ in range(3):
+    t.pdoc.undo()
+check("undo takes the marks off the original again", t.pdoc.redaction_count() == 0)
+w.set_mode("redact"); w.set_redact_by("text")
 w.actions_by_name["redact_done"].trigger()
 check("Done hides the redaction bar", w.mode == "select" and w.redact_bar.isHidden())
 
@@ -241,7 +285,7 @@ had_dot = w._badges["save"]
 w._write(t, out_path)
 check("saving clears the dot on Save", had_dot and not w._badges["save"])
 d = fitz.open(out_path)
-check("saved file reopens", d.page_count == 6 and "CRAIG000006" in d[5].get_text() and "12345" not in d[0].get_text().split("Confidential account")[1][:8])
+check("saved file reopens", d.page_count == 6 and "CRAIG000006" in d[5].get_text())
 d.close()
 
 # --- combine PDF + image ----------------------------------------------------------------------------------
@@ -600,7 +644,8 @@ w.set_mode("select")
 # --- recent documents ------------------------------------------------------------------------------------------
 recent = window.recent_files()
 check("opened and saved files are in Recent, newest first",
-      recent[:3] == [out_path, os.path.join(work, "second.pdf"), os.path.join(work, "sample.pdf")], str(recent[:3]))
+      recent[:4] == [out_path, os.path.join(work, "sample - Redacted.pdf"), os.path.join(work, "second.pdf"),
+                     os.path.join(work, "sample.pdf")], str(recent[:4]))
 extra = os.path.join(work, "extra.pdf")
 shutil.copy(os.path.join(work, "second.pdf"), extra)
 window.remember_recent(extra)

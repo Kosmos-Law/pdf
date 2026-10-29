@@ -10,13 +10,15 @@ from PySide6.QtGui import (QColor, QFont, QFontMetricsF, QGuiApplication, QImage
                            QTextBlockFormat, QTextCursor)
 from PySide6.QtWidgets import QApplication, QFrame, QMenu, QScrollArea, QTextEdit, QToolButton, QWidget
 
-from .core import MIME_PAGES, mime_pdf_bytes, parse_da_fontsize
+from .core import MIME_PAGES, mark_redaction, mime_pdf_bytes, parse_da_fontsize
 from .theme import NOTE_MENU_ICON, Colors, draw_page_shadow, lucide
 
 MARGIN = 12      # space around and between pages, in screen pixels
 FIND_OTHER = QColor(255, 222, 0, 95)       # find matches: yellow, stronger than the firm's pale highlight
 FIND_CURRENT = QColor(255, 204, 0, 175)
 FIND_OUTLINE = QColor(176, 132, 0)
+REDACT_WASH = QColor(46, 52, 64, 64)       # over marked areas: slate, and see-through, so the text still reads
+REDACT_EDGE = QColor(46, 52, 64, 150)      # the box being drawn around an area
 CACHE_PAGES = 24
 def _hex(h):
     return tuple(int(h[k:k + 2], 16) / 255 for k in (1, 3, 5))
@@ -442,6 +444,7 @@ class PageView(QScrollArea):
         self.mode = "select"
         self.font_size = 12.0
         self.hl_color = HIGHLIGHT_COLORS["Yellow"]
+        self.redact_by = "text"       # redact mode: "text" (select it) or "area" (draw a box)
         self.page_rects = []          # QRect per page in canvas coords
         self._sizes = []              # (w, h) per page in points, as last laid out
         self._cache = OrderedDict()   # (key, zoom, dpr) -> QPixmap
@@ -632,17 +635,17 @@ class PageView(QScrollArea):
             p.drawPixmap(r.topLeft(), self.render(i))
             self.paint_overlays(p, i)
         if self._rubber:
-            p.setPen(QPen(QColor("#d62828"), 1.5, Qt.DashLine))
-            p.setBrush(QColor(214, 40, 40, 40))
+            p.setPen(QPen(REDACT_EDGE, 1, Qt.DashLine))
+            p.setBrush(REDACT_WASH)
             p.drawRect(self._rubber[1])
         p.end()
 
     def paint_overlays(self, p, i):
         page = self.pdoc.doc[i]
-        # Redaction marks: MuPDF draws them faintly, so make them obvious.
+        # Redaction marks: a light wash over MuPDF's faint outline (see core.mark_redaction).
+        p.setPen(Qt.NoPen)
+        p.setBrush(REDACT_WASH)
         for a in page.annots(types=[fitz.PDF_ANNOT_REDACT]):
-            p.setPen(QPen(QColor("#d62828"), 2))
-            p.setBrush(QColor(214, 40, 40, 60))
             p.drawRect(self.to_canvas(i, a.rect))
         if self.sel and self.sel[0] == i:
             p.setPen(Qt.NoPen)
@@ -697,7 +700,7 @@ class PageView(QScrollArea):
             else:
                 self.start_typewriter(i, self.to_vis(i, pos))
             return
-        if self.mode == "redact":
+        if self.mode == "redact" and self.redact_by == "area":
             self._press = ("rect", i, pos)
             self._rubber = (i, QRectF(pos, pos))
             return
@@ -715,9 +718,9 @@ class PageView(QScrollArea):
                 self.sel_annot = (i, a.xref)
         chars = self.chars(i)
         idx = nearest_char(chars, pt, max_dist=None if self.mode == "select" else 30)
-        if self.mode == "highlight" and idx is None:
-            # No text near the click (e.g. a scan): highlight a rectangle instead.
-            self._press = ("hlrect", i, pos)
+        if self.mode in ("highlight", "redact") and idx is None:
+            # No text near the click (e.g. a scan): highlight, or redact, a rectangle instead.
+            self._press = ("hlrect" if self.mode == "highlight" else "rect", i, pos)
             self._rubber = (i, QRectF(pos, pos))
             return
         self._press = ("text", i, pos, idx)
@@ -783,6 +786,8 @@ class PageView(QScrollArea):
         elif kind == "word":
             if self.mode == "highlight" and self.sel:
                 self.highlight_selection()
+            elif self.mode == "redact" and self.sel:
+                self.redact_selection()
             self.canvas.update()
         elif kind == "text":
             if self.mode == "highlight" and self.hl_color is None:
@@ -796,6 +801,8 @@ class PageView(QScrollArea):
                 self.erase_highlights(i, rects)
             elif self.mode == "highlight" and self.sel:
                 self.highlight_selection()
+            elif self.mode == "redact" and self.sel:
+                self.redact_selection()          # text redaction: just the selected characters, line by line
             elif not self.sel:
                 self.canvas.update()
 
@@ -809,7 +816,8 @@ class PageView(QScrollArea):
         if a and a.type[0] == fitz.PDF_ANNOT_FREE_TEXT:
             self.edit_freetext(i, a)
             return
-        if self.mode == "select" or (self.mode == "highlight" and self.hl_color is not None):
+        if (self.mode == "select" or (self.mode == "highlight" and self.hl_color is not None)
+                or (self.mode == "redact" and self.redact_by == "text")):
             # Double-click selects a word; dragging on from there extends it a character at a time.
             chars = self.chars(i)
             idx = nearest_char(chars, pt, max_dist=2)
@@ -826,6 +834,8 @@ class PageView(QScrollArea):
                    "typewriter": Qt.IBeamCursor, "redact": Qt.CrossCursor}
         i = self.page_at(pos)
         cur = cursors[self.mode] if i is not None else Qt.ArrowCursor
+        if i is not None and self.mode == "redact" and self.redact_by == "text":
+            cur = Qt.IBeamCursor
         if i is not None and self.mode == "select" and self.annot_at(i, self.to_pdf(i, pos)):
             cur = Qt.SizeAllCursor
         self.canvas.setCursor(cur)
@@ -990,9 +1000,9 @@ class PageView(QScrollArea):
         self.pdoc.checkpoint()
         page = self.pdoc.doc[i]
         for r in rects:
-            page.add_redact_annot(fitz.Rect(r), fill=(0, 0, 0))
+            mark_redaction(page, r)
         self.pdoc.edited([i])
-        self.status.emit("Marked for redaction. Use Apply Redactions to remove the content permanently.")
+        self.status.emit("Marked for redaction. Save Redacted Copy removes it, in a copy; the original stays as it is.")
 
     def redact_selection(self):
         if not self.sel:
