@@ -194,7 +194,8 @@ on_toolbar = {b.defaultAction() for b in w.toolbar.findChildren(QToolButton)}
 check("redaction tools are off the main toolbar",
       not on_toolbar & {w.actions_by_name[n] for n in ("mode_redact", "apply_redactions", "redact_search")})
 check("redaction bar hidden until redacting", w.redact_bar.isHidden())
-check("OCR sits just right of Save", w.toolbar.actions()[:3] == [w.actions_by_name[n] for n in ("open", "save", "ocr")])
+tb_actions = w.toolbar.actions()
+check("OCR sits just right of Save", tb_actions[tb_actions.index(w.actions_by_name["save"]) + 1] is w.actions_by_name["ocr"])
 v.canvas.setFocus(); pump()
 QTest.keyClick(w, Qt.Key_R)
 pump()
@@ -744,10 +745,34 @@ QTest.mouseClick(fbtn, Qt.LeftButton); pump()
 check("clicking it again closes the bar", fb.isHidden() and not fbtn.isChecked() and not ft.view.find_hits)
 QTest.mouseClick(fbtn, Qt.LeftButton); pump()
 check("and once more opens it", fb.isVisible() and fbtn.isChecked())
+check("the find field has a clear button", fb.edit.isClearButtonEnabled())
+fb.edit.clear(); pump()
+check("clearing the field removes the marks at once", not ft.view.find_hits and fb.label.text() == "")
 fb.close_bar()
 ft.pdoc.modified = False
 w.close_tab(ft)
 pump()
+
+# --- the page panel folds away ------------------------------------------------------------------------------------
+w.tabs.setCurrentWidget(t); pump()
+pbtn = w.toolbar.widgetForAction(w.actions_by_name["thumbs"])
+check("page panel button comes first on the toolbar, pressed while the panel shows",
+      w.toolbar.actions()[0] is w.actions_by_name["thumbs"] and pbtn.isChecked() and t.thumbs.isVisible())
+total = sum(t.splitter.sizes())
+t.splitter.setSizes([240, total - 240]); t.splitter.splitterMoved.emit(240, 1); pump()
+QTest.mouseClick(pbtn, Qt.LeftButton); pump()
+check("clicking it hides the panel in every tab", not pbtn.isChecked()
+      and not any(tab.thumbs.isVisible() for tab in w.doc_tabs()))
+QTest.mouseClick(pbtn, Qt.LeftButton); pump()
+check("clicking again brings it back at the same width", t.thumbs.isVisible() and abs(t.splitter.sizes()[0] - 240) <= 2,
+      str(t.splitter.sizes()))
+t.splitter.setSizes([0, total]); t.splitter.splitterMoved.emit(0, 1); pump()
+check("dragging the edge all the way left folds the panel away", not pbtn.isChecked() and not t.thumbs.isVisible())
+w.actions_by_name["thumbs"].trigger(); pump()
+check("F4 opens it again at its last width", t.thumbs.isVisible() and abs(t.splitter.sizes()[0] - 240) <= 2
+      and not t.splitter.isCollapsible(1), str(t.splitter.sizes()))
+check("the panel's state and width are remembered", dialogs.settings().value("view/thumbs", type=bool) is True
+      and dialogs.settings().value("view/thumbs_width", type=int) == 240)
 
 # --- dialogs use Lucide icons -----------------------------------------------------------------------------------
 from PySide6.QtWidgets import QStyle  # noqa: E402

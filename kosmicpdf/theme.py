@@ -6,10 +6,10 @@ Lucide (ISC licence, see icons/LICENSE-lucide), tinted to the theme's text colou
 """
 import os
 
-from PySide6.QtCore import QByteArray, QPointF, QRectF, Qt
+from PySide6.QtCore import QByteArray, QPointF, QRectF, QSize, Qt
 from PySide6.QtGui import QColor, QIcon, QImage, QPainter, QPalette, QPen, QPixmap
 from PySide6.QtSvg import QSvgRenderer
-from PySide6.QtWidgets import QApplication, QProxyStyle, QStyle
+from PySide6.QtWidgets import QApplication, QProxyStyle, QPushButton, QStyle
 
 ICON_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "icons")
 CACHE_DIR = os.path.join(os.environ.get("XDG_CACHE_HOME", os.path.expanduser("~/.cache")), "kosmicpdf", "icons")
@@ -107,11 +107,12 @@ def icon_sizes():
     return sorted({round(n * r) for n in (NOTE_MENU_ICON, TOOLBAR_ICON) for r in ratios})
 
 
-def lucide(name, color, dot=False, stripe=None, sizes=None):
+def lucide(name, color, dot=False, stripe=None, sizes=None, gap=0.0):
     """A crisp QIcon from a bundled Lucide SVG in the given colour, optionally with a
     red dot in its bottom right corner (see BADGE), or drawn a little smaller above a
     stripe of colour (an RGB tuple), like the highlighter in a word processor. Drawn at
-    the toolbar's sizes unless `sizes` (in device pixels) says otherwise."""
+    the toolbar's sizes unless `sizes` (in device pixels) says otherwise. `gap` leaves
+    clear space to the right, as a fraction of the size (see DIALOG_ICON_GAP)."""
     path = os.path.join(ICON_DIR, f"{name}.svg")
     if not os.path.exists(path):
         return QIcon()
@@ -124,7 +125,7 @@ def lucide(name, color, dot=False, stripe=None, sizes=None):
                                       f'stroke="{color.name()}" stroke-opacity="{opacity}"').encode())
         renderer = QSvgRenderer(data)
         for size in sizes:
-            img = QImage(size, size, QImage.Format_ARGB32_Premultiplied)
+            img = QImage(size + round(size * gap), size, QImage.Format_ARGB32_Premultiplied)
             img.fill(Qt.transparent)
             p = QPainter(img)
             p.setRenderHint(QPainter.Antialiasing)
@@ -156,6 +157,9 @@ MESSAGE_ICONS = {      # the symbol beside a message box's text, and its colour 
     QStyle.SP_MessageBoxWarning: ("triangle-alert", WARNING), QStyle.SP_MessageBoxCritical: ("circle-x", BADGE),
 }
 MESSAGE_ICON = 32      # px, as Qt lays out message boxes
+# Qt sets a button's icon right against its text; dialog buttons' icons carry this much
+# clear space on their right (px), and the buttons show icons this much wider to fit it.
+DIALOG_ICON_GAP = 5
 
 
 class LucideStyle(QProxyStyle):
@@ -168,8 +172,12 @@ class LucideStyle(QProxyStyle):
 
     def standardIcon(self, which, option=None, widget=None):
         pal = QApplication.palette()
-        if which in DIALOG_ICONS:
+        gap = 0.0
+        if which == QStyle.SP_LineEditClearButton:      # the × inside a text box, e.g. the find field
+            name, color, sizes = "x", pal.color(QPalette.PlaceholderText), None
+        elif which in DIALOG_ICONS:
             name, color, sizes = DIALOG_ICONS[which], pal.color(QPalette.ButtonText), None
+            gap = DIALOG_ICON_GAP / TOOLBAR_ICON
         elif which in MESSAGE_ICONS:
             name, color = MESSAGE_ICONS[which]
             color = QColor(color) if color else pal.color(QPalette.Highlight)
@@ -177,10 +185,15 @@ class LucideStyle(QProxyStyle):
             sizes = sorted({round(MESSAGE_ICON * r) for r in ratios})
         else:
             return super().standardIcon(which, option, widget)
-        key = (name, color.name())
+        key = (name, color.name(), gap)
         if key not in self._icons:
-            self._icons[key] = lucide(name, color, sizes=sizes)
+            self._icons[key] = lucide(name, color, sizes=sizes, gap=gap)
         return self._icons[key]
+
+    def polish(self, widget):
+        super().polish(widget)
+        if isinstance(widget, QPushButton):     # room for the gap drawn into dialog icons
+            widget.setIconSize(QSize(TOOLBAR_ICON + DIALOG_ICON_GAP, TOOLBAR_ICON))
 
 
 def draw_stripe(p, size, rgb, opacity):

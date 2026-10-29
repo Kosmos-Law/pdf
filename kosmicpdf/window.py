@@ -20,6 +20,7 @@ from .thumbs import ThumbPane
 
 WINDOWS = []   # every open MainWindow, so tabs can find their way between them
 RECENT_MAX = 12
+THUMBS_WIDTH = 170      # px, the page panel's width until it is dragged wider or narrower
 EMPTY_TEXT = "Open a PDF (Ctrl+O), or drop files here."
 
 
@@ -68,6 +69,7 @@ class FindBar(QToolBar):
         self.toggleViewAction().setVisible(False)       # not offered in the toolbar menu
         self.edit = QLineEdit(placeholderText="Find in document")
         self.edit.setFixedWidth(300)
+        self.edit.setClearButtonEnabled(True)
         self.edit.installEventFilter(self)
         self.search_icon = self.edit.addAction(QIcon(), QLineEdit.LeadingPosition)
         self.addWidget(self.edit)
@@ -92,9 +94,10 @@ class FindBar(QToolBar):
         self.addWidget(spacer)
         self.close_action = self.addAction("Close", self.close_bar)
         self.close_action.setToolTip("Close (Esc)")
-        self.typing = QTimer(self, singleShot=True, interval=250)    # search once typing pauses
+        self.typing = QTimer(self, singleShot=True, interval=250)
         self.typing.timeout.connect(self.restart)
-        self.edit.textChanged.connect(lambda: self.typing.start())
+        # Search once typing pauses; emptying the field (e.g. with its ×) clears the marks at once.
+        self.edit.textChanged.connect(lambda text: self.typing.start() if text.strip() else self.restart())
         self.edit.returnPressed.connect(
             lambda: self.step(-1 if QApplication.keyboardModifiers() & Qt.ShiftModifier else 1))
         self.searching = QTimer(self, interval=0)
@@ -219,7 +222,10 @@ class DocTab(QWidget):
         self.splitter.addWidget(self.view)
         self.splitter.setStretchFactor(1, 1)
         self.splitter.setHandleWidth(1)
-        self.splitter.setSizes([170, 900])
+        self.splitter.setCollapsible(1, False)    # the panel folds away when dragged to the edge; the pages don't
+        self.splitter.setSizes([THUMBS_WIDTH, 900])
+        self.splitter.splitterMoved.connect(lambda *_: self.main_window() and
+                                            self.main_window().thumbs_dragged(self.splitter.sizes()[0]))
         lay = QVBoxLayout(self)
         lay.setContentsMargins(0, 0, 0, 0)
         lay.addWidget(self.splitter)
@@ -589,7 +595,8 @@ class MainWindow(QMainWindow):
         A("fit_width", "Fit &Width", lambda: self.tab and self.tab.view.set_zoom(fit="width"), "Ctrl+2")
         A("fit_page", "Fit &Page", lambda: self.tab and self.tab.view.set_zoom(fit="page"), "Ctrl+1")
         A("actual", "&Actual Size", lambda: self.tab and self.tab.view.set_zoom(1.0), "Ctrl+0")
-        A("thumbs", "&Thumbnails", self.toggle_thumbs, "F4", checkable=True).setChecked(True)
+        A("thumbs", "&Page Panel", lambda on: self.set_thumbs(on), "F4", tip="Show or hide the page panel (F4)",
+          checkable=True).setChecked(dialogs.settings().value("view/thumbs", True, type=bool))
         A("bates", "&Bates Numbering…", self.bates)
         A("ocr", "&OCR (Make Searchable)…", self.ocr).setIconText("OCR")
         A("pdfa", "Convert to &PDF/A…", self.pdfa)
@@ -639,6 +646,8 @@ class MainWindow(QMainWindow):
         tb.setMovable(False)
         tb.setIconSize(QSize(theme.TOOLBAR_ICON, theme.TOOLBAR_ICON))
         self.addToolBar(tb)
+        tb.addAction(a["thumbs"])
+        tb.addSeparator()
         for n in ("open", "save", "ocr"):
             tb.addAction(a[n])
         self.ocr_button = tb.widgetForAction(a["ocr"])
@@ -827,7 +836,7 @@ class MainWindow(QMainWindow):
         t.view.mode = self.mode
         t.view.font_size = self.font_size.value()
         t.view.hl_color = self.hl_color
-        t.thumbs.setVisible(self.actions_by_name["thumbs"].isChecked())
+        self.show_thumbs(t, self.actions_by_name["thumbs"].isChecked())
         t.view.apply_colors(self.colors)
         t.thumbs.apply_colors(self.colors)
 
@@ -869,9 +878,26 @@ class MainWindow(QMainWindow):
             self.statusBar().showMessage("Drag across highlighted text, or click a highlight, to remove it.", 8000)
         self.set_mode("highlight")
 
-    def toggle_thumbs(self):
+    # --- the page panel (thumbnails), shown or hidden for the whole window ----------------
+    def set_thumbs(self, on):
+        self.actions_by_name["thumbs"].setChecked(on)
         for t in self.doc_tabs():
-            t.thumbs.setVisible(self.actions_by_name["thumbs"].isChecked())
+            self.show_thumbs(t, on)
+        dialogs.settings().setValue("view/thumbs", on)
+
+    def show_thumbs(self, t, on):
+        t.thumbs.setVisible(on)
+        sizes = t.splitter.sizes()
+        if on and sizes[0] == 0:          # folded away by dragging: open it at its last width
+            width = dialogs.settings().value("view/thumbs_width", THUMBS_WIDTH, type=int)
+            t.splitter.setSizes([width, max(1, sum(sizes) - width)])
+
+    def thumbs_dragged(self, width):
+        """The divider beside the panel was dragged: to the edge folds the panel away."""
+        if width == 0:
+            self.set_thumbs(False)
+        else:
+            dialogs.settings().setValue("view/thumbs_width", width)
 
     def _zoom_chosen(self, text):
         if not self.tab:
@@ -889,7 +915,10 @@ class MainWindow(QMainWindow):
 
     # --- tabs ---------------------------------------------------------------
     def add_doc(self, pdoc, index=-1):
-        return self.add_tab(DocTab(pdoc), index)
+        tab = DocTab(pdoc)
+        width = dialogs.settings().value("view/thumbs_width", THUMBS_WIDTH, type=int)
+        tab.splitter.setSizes([width, 900])
+        return self.add_tab(tab, index)
 
     def add_tab(self, tab, index=-1):
         i = self.tabs.insertTab(index if index >= 0 else self.tabs.count(), tab, tab.pdoc.display_name())
