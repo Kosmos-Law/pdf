@@ -8,6 +8,7 @@ from .core import MIME_PAGES, mime_pdf_bytes, pages_mime, parse_source
 from .theme import Colors
 
 THUMB_W, THUMB_H = 120, 156
+CELL_W, CELL_H = THUMB_W + 22, THUMB_H + 30      # the least room each thumbnail takes
 
 
 def framed(pm):
@@ -44,7 +45,7 @@ class ThumbPane(QListWidget):
         self.setMovement(QListView.Static)
         self.setUniformItemSizes(True)
         self.setIconSize(QSize(THUMB_W, THUMB_H))
-        self.setGridSize(QSize(THUMB_W + 22, THUMB_H + 30))
+        self.setGridSize(QSize(CELL_W, CELL_H))
         self.setSelectionMode(QAbstractItemView.ExtendedSelection)
         self.setDragEnabled(True)
         self.setAcceptDrops(True)
@@ -66,6 +67,7 @@ class ThumbPane(QListWidget):
         self._drag_pos = QPoint()
         self._scroll_timer = QTimer(self, interval=30, timeout=self._auto_scroll)
         self._syncing = False
+        self._centre_soon = QTimer(self, singleShot=True, interval=0, timeout=self._centre_columns)
         self.placeholder = QPixmap(THUMB_W, THUMB_H)
         self.placeholder.fill(QColor("#ffffff"))
         self.placeholder = framed(self.placeholder)
@@ -107,6 +109,7 @@ class ThumbPane(QListWidget):
             self.select_pages([p for p in selected if p < self.count()])
         self._syncing = False
         self._timer.start()
+        self._centre_soon.start()
 
     def refresh(self, pages):
         for i in pages:
@@ -206,6 +209,26 @@ class ThumbPane(QListWidget):
         p.drawText(QRect(out.width() - 26, 0, 26, 26), Qt.AlignCenter, str(n))
         p.end()
         return out
+
+    def resizeEvent(self, e):
+        super().resizeEvent(e)
+        self._centre_soon.start()
+
+    def _centre_columns(self):
+        """Centre the columns of thumbnails in the panel, with an equal margin on the left
+        for the room Qt keeps on the right (for a scroll bar, which it reserves even before
+        one is needed). The margin is measured from the first row as laid out, so the
+        thumbnails stay centred whatever Qt has reserved."""
+        if not self.count():
+            return
+        left = self.viewportMargins().left()
+        full = self.viewport().width() + left
+        y0 = self.visualItemRect(self.item(0)).y()
+        cols = sum(1 for k in range(self.count()) if self.visualItemRect(self.item(k)).y() == y0)
+        margin = max(0, (full - cols * self.gridSize().width()) // 2)
+        if margin != left:
+            self.setViewportMargins(margin, 0, 0, 0)
+            self._centre_soon.start()        # check again once Qt has laid the thumbnails out anew
 
     # --- drop in ------------------------------------------------------------
     def _single_column(self):

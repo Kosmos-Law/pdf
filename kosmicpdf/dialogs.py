@@ -4,7 +4,7 @@ import shutil
 import subprocess
 
 import pymupdf as fitz
-from PySide6.QtCore import QSettings, Qt, Signal
+from PySide6.QtCore import QEvent, QSettings, Qt, Signal
 from PySide6.QtGui import QPalette
 from PySide6.QtWidgets import (QAbstractItemView, QCheckBox, QComboBox, QDialog, QDialogButtonBox,
                                QDoubleSpinBox, QFileDialog, QFormLayout, QGroupBox, QHBoxLayout,
@@ -122,8 +122,9 @@ class BatesDialog(QDialog):
 
 
 class FileList(QWidget):
-    """Files to put in order: drag them, or Move Up / Move Down; Add, Remove, Sort by Name.
-    Each row shows label(path), the file's name unless a dialog says otherwise."""
+    """Files to put in order: drag them, or Move Up / Move Down; Add Files, Sort by Name,
+    and the Delete key to take the selected ones out. Each row shows label(path), the
+    file's name unless a dialog says otherwise."""
     changed = Signal()
 
     def __init__(self, file_filter, label=os.path.basename):
@@ -132,9 +133,11 @@ class FileList(QWidget):
         self.list = QListWidget()
         self.list.setDragDropMode(QAbstractItemView.InternalMove)
         self.list.setSelectionMode(QAbstractItemView.ExtendedSelection)
+        self.list.setProperty("field", True)        # drawn like a text box (see theme.stylesheet)
+        self.list.installEventFilter(self)
         self.list.model().rowsMoved.connect(self.changed)
         side = QVBoxLayout()
-        for text, slot in (("Add Files…", self.add_files), ("Remove", self._remove),
+        for text, slot in (("Add Files…", self.add_files),
                            ("Move Up", lambda: self._move(-1)), ("Move Down", lambda: self._move(1)),
                            ("Sort by Name", self._sort)):
             side.addWidget(QPushButton(text, clicked=slot))
@@ -144,6 +147,12 @@ class FileList(QWidget):
         row.addWidget(self.list, 1)
         row.addLayout(side)
         self.changed.connect(self.relabel)
+
+    def eventFilter(self, obj, e):
+        if obj is self.list and e.type() == QEvent.KeyPress and e.key() in (Qt.Key_Delete, Qt.Key_Backspace):
+            self._remove()
+            return True
+        return super().eventFilter(obj, e)
 
     def add(self, paths):
         for f in paths:
@@ -219,7 +228,8 @@ class CombineDialog(QDialog):
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
         lay = QVBoxLayout(self)
-        lay.addWidget(QLabel("Drag to reorder. The files are combined top to bottom into a new, unsaved PDF."))
+        lay.addWidget(QLabel("Drag to reorder; Delete takes the selected files out. The files are combined "
+                             "top to bottom into a new, unsaved PDF."))
         lay.addWidget(self.list, 1)
         lay.addLayout(size_row)
         lay.addWidget(buttons)
@@ -310,8 +320,8 @@ class BatesFilesDialog(QDialog):
         buttons.rejected.connect(self.reject)
         lay = QVBoxLayout(self)
         lay.addWidget(QLabel("Drag to set the order: the numbering runs top to bottom, each file carrying on "
-                             "from the one before.\nNumbered copies are saved in the folder below; "
-                             "the original files aren't changed."))
+                             "from the one before.\nDelete takes the selected files out. Numbered copies are saved "
+                             "in the folder below; the original files aren't changed."))
         lay.addWidget(self.list, 1)
         lay.addWidget(self.fields)
         lay.addWidget(buttons)
@@ -417,6 +427,7 @@ class OcrDialog(QDialog):
         self.setWindowTitle("OCR (Make Searchable)")
         s = settings()
         self.langs = QListWidget()
+        self.langs.setProperty("field", True)
         self.langs.setMaximumHeight(110)
         chosen = (s.value("ocr/langs", "eng") or "eng").split("+")
         for l in tesseract_languages():

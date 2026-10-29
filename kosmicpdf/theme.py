@@ -317,6 +317,11 @@ QScrollBar::handle:hover, QScrollBar::handle:pressed {{ background:{c.rgba(t, 12
 QScrollBar::add-line, QScrollBar::sub-line {{ width:0; height:0; border:none; background:none; }}
 QScrollBar::add-page, QScrollBar::sub-page {{ background:none; }}
 
+QListWidget[field="true"] {{ background:{c.field.name()}; color:{t.name()}; border:1px solid {c.line.name()};
+    border-radius:4px; padding:2px; outline:none; }}
+QListWidget[field="true"]:focus {{ border-color:{c.accent.name()}; }}
+QListWidget[field="true"]::item {{ padding:3px 4px; border-radius:3px; }}
+QListWidget[field="true"]::item:selected {{ background:{c.rgba(c.accent, 70)}; color:{t.name()}; }}
 QLineEdit, QComboBox, QSpinBox, QDoubleSpinBox {{ background:{c.field.name()}; color:{t.name()};
     border:1px solid {c.line.name()}; border-radius:4px; padding:3px 6px; min-height:20px;
     selection-background-color:{c.accent.name()}; }}

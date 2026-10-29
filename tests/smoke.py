@@ -852,6 +852,23 @@ check("dragging the edge all the way left folds the panel away", not pbtn.isChec
 w.actions_by_name["thumbs"].trigger(); pump()
 check("F4 opens it again at its last width", t.thumbs.isVisible() and abs(t.splitter.sizes()[0] - 240) <= 2
       and not t.splitter.isCollapsible(1), str(t.splitter.sizes()))
+def thumb_row(width):
+    """The panel's width, and the left and right edges of the first row of thumbnails in it."""
+    total = sum(t.splitter.sizes())
+    t.splitter.setSizes([width, total - width]); pump(); pump()
+    th = t.thumbs
+    y0 = th.visualItemRect(th.item(0)).y()
+    row = [th.visualItemRect(th.item(k)) for k in range(th.count()) if th.visualItemRect(th.item(k)).y() == y0]
+    to_panel = lambda x: th.viewport().mapTo(th, QPoint(x, 0)).x()  # noqa: E731
+    sb = th.verticalScrollBar().width() if th.verticalScrollBar().isVisible() else 0
+    return th.width() - sb, to_panel(row[0].left()), to_panel(row[-1].right()), len(row)
+
+
+pw, a, b, cols = thumb_row(250)
+check("thumbnails sit in the middle of a one-column panel", cols == 1 and abs(a - (pw - b)) <= 3, f"{a}..{b} of {pw}")
+pw, a, b, cols = thumb_row(420)
+check("a wider panel's columns sit in the middle too", cols == 2 and abs(a - (pw - b)) <= 3, f"{a}..{b} of {pw}, {cols}")
+thumb_row(240)
 check("the panel's state and width are remembered", dialogs.settings().value("view/thumbs", type=bool) is True
       and dialogs.settings().value("view/thumbs_width", type=int) == 240)
 
@@ -887,6 +904,14 @@ copy_a.close()
 check("the original files are unchanged", open(src_a, "rb").read() == original_a)
 check("an image counts as one page, an unreadable file as none",
       dialogs.page_count(os.path.join(work, "scan.png")) == 1 and dialogs.page_count(os.path.join(work, "nope.pdf")) is None)
+from PySide6.QtWidgets import QPushButton  # noqa: E402
+check("the file list looks like a text box, with no Remove button",
+      bf.list.list.property("field") is True
+      and "Remove" not in [b.text() for b in bf.list.findChildren(QPushButton)])
+bf.list.list.clearSelection(); bf.list.list.item(0).setSelected(True)
+QTest.keyClick(bf.list.list, Qt.Key_Delete); pump()
+check("Delete takes the selected file out, and the rest renumber",
+      bf.list.files() == [src_a] and "KOS000001 – " in rows()[0], str(rows()))
 bf.deleteLater()
 # The whole command, as from the menu: its dialog filled in, and the closing message dismissed.
 real_exec, real_box_exec = dialogs.BatesFilesDialog.exec, QMessageBox.exec
