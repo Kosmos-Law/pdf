@@ -1124,7 +1124,6 @@ class MainWindow(QMainWindow):
         names = ", ".join(os.path.basename(f) for f in files[:2]) + (", …" if len(files) > 2 else "")
         self.empty.setText(f"Opening {names}…")
         self.empty.installEventFilter(self)
-        QApplication.setOverrideCursor(Qt.BusyCursor)
         QTimer.singleShot(1000, self._open_pending)   # in case the window is never drawn (e.g. starts minimised)
 
     def eventFilter(self, obj, e):
@@ -1140,7 +1139,6 @@ class MainWindow(QMainWindow):
         try:
             self.open_files(files)
         finally:
-            QApplication.restoreOverrideCursor()
             self.empty.setText(EMPTY_TEXT)
 
     def open_files(self, files):
