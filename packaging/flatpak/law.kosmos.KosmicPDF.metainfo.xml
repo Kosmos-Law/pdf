@@ -34,6 +34,19 @@
     <color type="primary" scheme_preference="dark">#2e3440</color>
   </branding>
   <releases>
+    <release version="0.2.0" date="2026-10-29">
+      <description>
+        <p>Redaction, reworked. Mark exactly the words to remove, across line breaks, or draw a box around an area; marks show as a light wash, each with a button to remove it. Save Redacted Copy saves a separate "- Redacted" copy, in black, white or light grey boxes, and never changes the original.</p>
+        <ul>
+          <li>Bates Number Files: number a set of files in the order you choose, into copies that can be named by their first Bates number.</li>
+          <li>Find bar under the toolbar: searches as you type, with Match Case and Whole Words.</li>
+          <li>An OCR button that shows a red dot when a document has scanned pages without text, and a red dot on Save for unsaved changes.</li>
+          <li>Highlight selected text straight from the Highlight button, which now shows its colour as a stripe.</li>
+          <li>A collapsible page panel with centred thumbnails, lighter dialog icons, and a new app icon.</li>
+          <li>A PDF opened from the file manager goes to the window you used last and comes to the front, on X11 and on Wayland.</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.1.6" date="2026-10-28">
       <description>
         <p>Faster start: the window appears straight away and says what it is opening, and opening a PDF while Kosmic PDF is already running is near instant. The busy cursor now shows from the moment of launch.</p>
