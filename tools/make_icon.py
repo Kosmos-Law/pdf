@@ -1,9 +1,10 @@
 """Generate the Kosmic PDF app icon (SVG plus PNGs) into kosmicpdf/icons/app/.
 
 A document page (Lucide's file shape, with its cut corner but no fold) in a deepened
-version of the kosmos.law frost-to-amber gradient, carrying the Kosmos K-and-sparkle
-mark in night. The mark alone, without lettering, stays legible down to panel size.
-A faint dark edge and drop shadow hold the page on light and dark panels.
+version of the kosmos.law frost-to-amber gradient, carrying the three text lines of
+Lucide's file-text icon in white. Plain strokes, rather than a logo or lettering, stay
+recognisable down to panel size. A faint dark edge and a soft drop shadow hold the
+page on light and dark panels.
 
 The development copy (./install.sh --dev) gets the same icon in greys, so the two
 are easy to tell apart in the Menu and the panel.
@@ -27,31 +28,42 @@ DEV_LIGHT, DEV_DARK = "#8c96a8", "#c3c9d4"      # slate greys for the developmen
 PAGE = ("M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588"
         "A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z")
 
-# The Kosmos mark exactly as in the kosmos.law favicon, in its 100-unit grid.
-KAPPA = ("M28.06 20.46Q26.93 24.89 26.93 48.77Q32.69 42.73 37.78 37.64Q46.19 29.24 47.79 27.35"
-         "Q51.09 23.48 51.28 20.46H69.69Q66.95 22.63 60.72 29.14Q54.77 35.18 51.75 38.34Q48.73 41.51 48.45 41.79"
-         "Q47.22 43.02 45.48 44.71Q43.73 46.41 41.56 48.58Q47.60 53.59 51.47 57.08Q65.25 70.01 71.29 79.54"
-         "H54.40Q53.08 75.67 50.05 71.80Q48.73 70.20 46.28 67.70Q43.83 65.20 40.24 61.61Q32.03 53.49 26.93 50.09"
-         "V67.27Q27.03 71.71 27.26 74.73Q27.50 77.75 27.97 79.54H14.00Q15.04 75.96 15.13 67.46Q15.13 49.91 15.13 40.18"
-         "Q15.13 30.46 15.04 28.29Q14.94 26.12 14.71 24.19Q14.47 22.25 14.00 20.46Z")
-SPARKLE = ("M76.87 31.10Q79.61 45.49 94.00 48.23Q79.61 50.97 76.87 65.36Q74.13 50.97 59.74 48.23"
-           "Q74.13 45.49 76.87 31.10Z")
-MARK_LEFT, MARK_RIGHT, MARK_TOP, MARK_BOTTOM = 14.0, 94.0, 20.46, 79.54
-MARK_WIDTH = 13.5      # in the 24-unit grid; the page interior is about 16 wide
+# The three text lines of Lucide's file-text icon (the top one shorter), in the same
+# 24-unit grid as the page, drawn in white: a little lighter than Lucide's and spread
+# a little further apart (Lucide has them at 9, 13 and 17), about the same centre.
+LINES = ((8, 10, 8.4), (8, 16, 13), (8, 16, 17.6))     # (left, right, height)
+LINE_WIDTH = 1.6
+LINE = "#ffffff"
+SCALE = 10.6                     # px per grid unit in the 256 px icon
+OFFSET = 128 - 12 * SCALE        # where the grid starts in it, px
 
 
-def mark():
-    """The Kosmos mark, MARK_WIDTH units wide, centred on the page."""
-    s = MARK_WIDTH / (MARK_RIGHT - MARK_LEFT)
-    height = (MARK_BOTTOM - MARK_TOP) * s
-    x, y = 12 - MARK_WIDTH / 2 - MARK_LEFT * s, 12 - height / 2 - MARK_TOP * s
-    return (f'<g transform="translate({x:.3f} {y:.3f}) scale({s:.5f})" fill="{NIGHT}">'
-            f'<path d="{KAPPA}"/><path d="{SPARKLE}"/></g>')
+def lines(size=None):
+    """The text lines. For a small PNG (`size` px across), each line's thickness and
+    height are rounded to whole pixels, so it stays crisp instead of blurring across
+    two rows of pixels."""
+    width, rows = LINE_WIDTH, [y for _, _, y in LINES]
+    if size:
+        unit, offset = size / 256 * SCALE, size / 256 * OFFSET
+        px = max(1, round(LINE_WIDTH * unit))
+        width = px / unit
+        rows = [(round(offset + y * unit - px / 2) + px / 2 - offset) / unit for y in rows]
+    return (f'<g fill="none" stroke="{LINE}" stroke-width="{width:.4f}">'
+            + "".join(f'<path d="M{x1} {y:.4f}H{x0}"/>' for (x0, x1, _), y in zip(LINES, rows)) + "</g>")
 
 
-def svg(start=FROST, end=AMBER):
-    scale = 10.6
-    tx, ty = 128 - 12 * scale, 128 - 12 * scale
+def shadow():
+    """A soft drop shadow, a little below the page: rings of widening stroke, each
+    fainter than the last, standing in for a blur (which QtSvg can't draw)."""
+    rings = ((4.6, 0.035), (3.8, 0.05), (3.0, 0.07), (2.2, 0.1))
+    return "".join(f'<path d="{PAGE}" transform="translate(0 0.55)" fill="#000" fill-opacity="0.1" '
+                   f'stroke="#000" stroke-opacity="{alpha}" stroke-width="{width}"/>' for width, alpha in rings)
+
+
+def svg(start=FROST, end=AMBER, size=None):
+    """The icon; with `size`, tuned for a PNG of that many pixels (see lines())."""
+    scale = SCALE
+    tx, ty = OFFSET, OFFSET
     return f"""<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
   <defs>
     <linearGradient id="kosmos" x1="0" y1="0" x2="1" y2="1">
@@ -59,10 +71,10 @@ def svg(start=FROST, end=AMBER):
     </linearGradient>
   </defs>
   <g transform="translate({tx:.1f} {ty:.1f}) scale({scale})" stroke-linecap="round" stroke-linejoin="round">
-    <path d="{PAGE}" transform="translate(0 0.45)" fill="#000" fill-opacity="0.18" stroke="#000" stroke-opacity="0.18" stroke-width="2"/>
-    <path d="{PAGE}" fill="none" stroke="{NIGHT}" stroke-opacity="0.22" stroke-width="2.35"/>
+    {shadow()}
+    <path d="{PAGE}" fill="none" stroke="{NIGHT}" stroke-opacity="0.32" stroke-width="2.4"/>
     <path d="{PAGE}" fill="url(#kosmos)" stroke="url(#kosmos)" stroke-width="2"/>
-    {mark()}
+    {lines(size)}
   </g>
 </svg>
 """
@@ -71,15 +83,15 @@ def svg(start=FROST, end=AMBER):
 def main():
     QGuiApplication(sys.argv)
     os.makedirs(OUT, exist_ok=True)
-    for name, image in (("kosmicpdf", svg()), ("kosmicpdf-dev", svg(DEV_LIGHT, DEV_DARK))):
+    for name, colours in (("kosmicpdf", (FROST, AMBER)), ("kosmicpdf-dev", (DEV_LIGHT, DEV_DARK))):
         with open(os.path.join(OUT, f"{name}.svg"), "w") as f:
-            f.write(image)
+            f.write(svg(*colours))
         for size in (16, 24, 32, 48, 64, 128, 256):
             img = QImage(size, size, QImage.Format_ARGB32_Premultiplied)
             img.fill(Qt.transparent)
             p = QPainter(img)
             p.setRenderHint(QPainter.Antialiasing)
-            QSvgRenderer(QByteArray(image.encode())).render(p, QRectF(0, 0, size, size))
+            QSvgRenderer(QByteArray(svg(*colours, size=size).encode())).render(p, QRectF(0, 0, size, size))
             p.end()
             img.save(os.path.join(OUT, f"{name}-{size}.png"))
     print("wrote", OUT)
