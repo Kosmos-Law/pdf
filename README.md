@@ -5,15 +5,17 @@ Qt (PySide6) and PyMuPDF. OCR and PDF/A use OCRmyPDF, Tesseract and Ghostscript.
 
 ## Installing
 
-As a Flatpak, with automatic updates (see `packaging/flatpak/README.md`):
+From source, on Debian, Ubuntu, Linux Mint and the like (or download the ZIP from
+GitHub instead of cloning):
 
-    flatpak install --user https://kosmos.law/flatpak/kosmicpdf.flatpakref
-
-Or from source:
-
-    git clone git@github.com:Kosmos-Law/pdf.git kosmicpdf
+    git clone https://github.com/Kosmos-Law/pdf.git kosmicpdf
     cd kosmicpdf
     ./install.sh
+
+To update later, run `git pull` in that folder, then `./install.sh` again.
+
+A Flatpak with automatic updates, which also bundles OCR and PDF/A support, is
+on its way; this page will give the one-line install when it's ready.
 
 The installer sets up a private Python environment in `.venv` from the pinned
 versions in `requirements.txt`, adds Kosmic PDF to the Menu with its icon, and
