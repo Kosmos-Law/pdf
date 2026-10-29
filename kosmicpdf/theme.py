@@ -9,7 +9,7 @@ import os
 from PySide6.QtCore import QByteArray, QPointF, QRectF, QSize, Qt
 from PySide6.QtGui import QColor, QIcon, QImage, QPainter, QPalette, QPen, QPixmap
 from PySide6.QtSvg import QSvgRenderer
-from PySide6.QtWidgets import QApplication, QProxyStyle, QPushButton, QStyle
+from PySide6.QtWidgets import QAbstractSpinBox, QApplication, QProxyStyle, QPushButton, QStyle
 
 ICON_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "icons")
 CACHE_DIR = os.path.join(os.environ.get("XDG_CACHE_HOME", os.path.expanduser("~/.cache")), "kosmicpdf", "icons")
@@ -160,6 +160,7 @@ MESSAGE_ICON = 24      # px, the symbol beside a message box's text (Qt's own is
 # Qt sets a button's icon right against its text; dialog buttons' icons carry this much
 # clear space on their right (px), and the buttons show icons this much wider to fit it.
 DIALOG_ICON_GAP = 5
+SPIN_TEXT_MARGIN = 6   # px before the text in a spin box (the font size box, Bates numbers)
 
 
 class LucideStyle(QProxyStyle):
@@ -199,6 +200,10 @@ class LucideStyle(QProxyStyle):
         super().polish(widget)
         if isinstance(widget, QPushButton):     # room for the gap drawn into dialog icons
             widget.setIconSize(QSize(TOOLBAR_ICON + DIALOG_ICON_GAP, TOOLBAR_ICON))
+        elif isinstance(widget, QAbstractSpinBox):
+            # A spin box's text field starts right at its edge (padding doesn't move it), unlike a
+            # combo box's; this lines its text up with theirs.
+            widget.lineEdit().setTextMargins(SPIN_TEXT_MARGIN, 0, 0, 0)
 
 
 def draw_stripe(p, size, rgb, opacity):

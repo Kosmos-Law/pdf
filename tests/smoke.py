@@ -986,6 +986,11 @@ from kosmicpdf.theme import LucideStyle  # noqa: E402
 lstyle = LucideStyle(app.style().name())
 discard = lstyle.standardIcon(QStyle.SP_DialogDiscardButton)
 question = lstyle.standardIcon(QStyle.SP_MessageBoxQuestion)
+from PySide6.QtWidgets import QDoubleSpinBox  # noqa: E402
+spin = QDoubleSpinBox()
+lstyle.polish(spin)
+check("spin boxes keep their text off the left edge, like the other fields",
+      spin.lineEdit().textMargins().left() == theme.SPIN_TEXT_MARGIN > 0)
 check("dialog buttons and message boxes get Lucide icons, drawn once",
       not discard.isNull() and discard.cacheKey() == lstyle.standardIcon(QStyle.SP_DialogDiscardButton).cacheKey()
       and QSize(24, 24) in question.availableSizes()
