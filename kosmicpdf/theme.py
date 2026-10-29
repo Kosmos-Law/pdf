@@ -17,6 +17,13 @@ TOOLBAR_ICON = 16      # px, also the menus' icon size
 NOTE_MENU_ICON = 12    # px, the menu button on a typewriter note
 ICON_STROKE = 1.5      # Lucide line width in its 24-unit grid; its default of 2 looks heavy at this size
 ICON_OPACITY = 1.0
+ATTENTION = "#e2b461"  # Kosmos amber: a button that has something to offer, such as OCR for a scan
+REDACT = "#c0392b"     # a muted red, tinting the bar shown while redacting
+
+
+def mix(a, b, share):
+    """Colour a with `share` of colour b blended in."""
+    return QColor.fromRgbF(*(x + (y - x) * share for x, y in zip(a.getRgbF()[:3], b.getRgbF()[:3])))
 
 
 def kosmos_dark_palette():
@@ -76,6 +83,9 @@ class Colors:
         self.line = win.lighter(150) if self.dark else win.darker(115)       # hairline borders
         self.field = win.darker(125) if self.dark else win.lighter(104)      # text boxes, menus
         self.shadow = 46 if self.dark else 24      # alpha of the innermost shadow ring
+        self.attention = QColor(ATTENTION)
+        self.redact_band = mix(win, QColor(REDACT), 0.16 if self.dark else 0.09)   # the bar shown while redacting
+        self.redact_line = mix(win, QColor(REDACT), 0.45 if self.dark else 0.35)
 
     def key(self):
         return (self.pages.name(), self.panel.name(), self.text.name(), self.accent.name())
@@ -181,6 +191,9 @@ QToolButton {{ border:1px solid transparent; border-radius:5px; padding:5px; }}
 QToolButton:hover {{ background:{hover}; }}
 QToolButton:pressed {{ background:{press}; }}
 QToolButton:checked {{ background:{c.rgba(c.accent, 55)}; border-color:{c.rgba(c.accent, 130)}; }}
+QToolButton[attention="true"] {{ background:{c.rgba(c.attention, 80)}; border-color:{c.rgba(c.attention, 210)}; }}
+QToolButton[attention="true"]:hover {{ background:{c.rgba(c.attention, 125)}; }}
+QToolBar#redactBar {{ background:{c.redact_band.name()}; border-bottom:1px solid {c.redact_line.name()}; padding:3px 6px; }}
 QToolButton::menu-indicator {{ image:url({down}); width:8px; height:8px;
                               subcontrol-origin:padding; subcontrol-position:bottom right; }}
 

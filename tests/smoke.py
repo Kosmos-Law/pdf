@@ -8,7 +8,8 @@ import sys
 import pymupdf as fitz
 from PySide6.QtCore import QEvent, QPoint, QPointF, Qt, QTimer
 from PySide6.QtGui import QGuiApplication, QMouseEvent
-from PySide6.QtWidgets import QApplication, QMessageBox
+from PySide6.QtTest import QTest
+from PySide6.QtWidgets import QApplication, QMessageBox, QToolButton
 
 if not os.environ.get("KOSMICPDF_TEST_INSTALLED"):   # set when testing an installed build (e.g. the Flatpak)
     sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -189,17 +190,28 @@ QApplication.sendEvent(v.canvas, QKeyEvent(QEvent.KeyPress, Qt.Key_Delete, Qt.No
 check("delete annotation", not [a for a in t.pdoc.doc[0].annots() if a.type[0] == fitz.PDF_ANNOT_FREE_TEXT])
 
 # --- redaction --------------------------------------------------------------------------------------
-w.set_mode("redact")
+on_toolbar = {b.defaultAction() for b in w.toolbar.findChildren(QToolButton)}
+check("redaction tools are off the main toolbar",
+      not on_toolbar & {w.actions_by_name[n] for n in ("mode_redact", "apply_redactions", "redact_search")})
+check("redaction bar hidden until redacting", w.redact_bar.isHidden())
+v.canvas.setFocus(); pump()
+QTest.keyClick(w, Qt.Key_R)
+pump()
+check("R starts redacting and shows the redaction bar", w.mode == "redact" and w.redact_bar.isVisible()
+      and w.redact_count.text().startswith("Nothing marked"), w.mode)
 r = text_pos(v, 0, "12345")
 mouse(v.canvas, "press", r.topLeft().toPoint() - QPoint(2, 2))
 mouse(v.canvas, "move", r.bottomRight().toPoint() + QPoint(2, 2))
 mouse(v.canvas, "release", r.bottomRight().toPoint() + QPoint(2, 2))
 check("redaction marked", t.pdoc.redaction_count() == 1)
+check("redaction bar counts the marks", w.redact_count.text().startswith("1 area marked"), w.redact_count.text())
+w.redact_bar.grab().save(os.path.join(OUT, "02b-redact-bar.png"))
 before = t.pdoc.doc[0].get_text().count("12345")
 w.apply_redactions()
 after = t.pdoc.doc[0].get_text().count("12345")
 check("redaction removes text", after == before - 1 and t.pdoc.redaction_count() == 0, f"{before}->{after}")
-w.set_mode("select")
+w.actions_by_name["redact_done"].trigger()
+check("Done hides the redaction bar", w.mode == "select" and w.redact_bar.isHidden())
 
 # --- Bates numbering, including the rotated page ------------------------------------------------------
 t.pdoc.checkpoint()
@@ -238,11 +250,15 @@ check("combine pdf + image", out.page_count == 4 and out[3].rect == fitz.Rect(0,
 img_doc = PdfDocument(load_any(os.path.join(work, "scan.png"), "Letter"), title="scan.pdf")
 it = w.add_doc(img_doc)
 check("image has no text before OCR", not img_doc.doc[0].get_text().strip())
+pump(10)
+check("OCR button lights up for a scan", img_doc.needs_ocr() and w.ocr_button.property("attention") is True
+      and w.ocr_button.toolButtonStyle() == Qt.ToolButtonTextBesideIcon)
 job = window.ExternalJob(w, it, ["-l", "eng", "--skip-text", "--output-type", "pdf"], "OCR")
 while job.proc.state() != job.proc.ProcessState.NotRunning:
     job.proc.waitForFinished(100); pump(5)
 pump(20)
 check("OCR adds searchable text", "quick brown fox" in img_doc.doc[0].get_text(), img_doc.doc[0].get_text()[:60])
+check("OCR button settles once the text is there", not img_doc.needs_ocr() and w.ocr_button.property("attention") is False)
 
 # --- PDF/A ----------------------------------------------------------------------------------------------------
 job = window.ExternalJob(w, it, ["--skip-text", "--tesseract-timeout", "0", "--output-type", "pdfa-2"], "PDF/A")
@@ -612,6 +628,18 @@ for tab in w2.doc_tabs():
     tab.pdoc.modified = False
 w2.close()
 pump()
+
+# --- scans without text ---------------------------------------------------------------------------------------
+from kosmicpdf.core import page_needs_ocr  # noqa: E402
+scan = fitz.open(os.path.join(work, "scanned-letter.pdf"))
+check("sample scan has no text, and every page needs OCR",
+      not any(p.get_text().strip() for p in scan) and all(page_needs_ocr(p) for p in scan))
+check("a text PDF doesn't need OCR", PdfDocument(fitz.open(os.path.join(work, "sample.pdf"))).needs_ocr() is False)
+mixed = PdfDocument(fitz.open(os.path.join(work, "sample.pdf")))
+mixed.insert_doc(scan, 3)
+check("one scanned page among text pages is found", mixed.needs_ocr() is True)
+check("a time budget lets a long check carry on later", mixed.needs_ocr(budget=-1) in (None, True)
+      and mixed.needs_ocr() is True)
 
 # --- page number field ----------------------------------------------------------------------------------------
 w.tabs.setCurrentWidget(t); pump()

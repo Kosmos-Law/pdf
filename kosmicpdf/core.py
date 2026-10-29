@@ -7,6 +7,7 @@ space; what the user sees is the rotated page. Convert with
 """
 import itertools
 import os
+import time
 
 import pymupdf as fitz
 from PySide6.QtCore import QBuffer, QByteArray, QIODevice, QMimeData, QObject, Signal
@@ -23,6 +24,17 @@ PAGE_SIZES = {
     "A4": (595, 842),
 }
 UNDO_LIMIT = 20
+SCAN_IMAGE_SHARE = 0.25   # an image covering this much of a page, with no text, looks like a scan
+
+
+def page_needs_ocr(page):
+    """True for a page that looks like a scan with no text layer: no text that can be
+    selected or searched, and an image covering a good part of the page. (A blank page,
+    or one with only a small logo, doesn't need OCR.)"""
+    if not page.get_images() or page.get_text("text").strip():
+        return False
+    area = abs(page.rect)
+    return any(abs(fitz.Rect(info["bbox"])) >= SCAN_IMAGE_SHARE * area for info in page.get_image_info())
 
 
 def is_image(path):
@@ -129,6 +141,7 @@ class PdfDocument(QObject):
         self.modified = False
         self.generation = 0           # bumped whenever cached renders may be stale wholesale
         self._versions = {}           # page xref -> edit counter, for render cache keys
+        self._needs_ocr = {}          # page key -> page_needs_ocr(), so edits only recheck their pages
         self._undo, self._redo = [], []
 
     # --- identity / caching -------------------------------------------------
@@ -152,6 +165,21 @@ class PdfDocument(QObject):
 
     def display_name(self):
         return self.title + (" *" if self.modified else "")
+
+    def needs_ocr(self, budget=None):
+        """Whether any page looks like a scan without text. With a time budget in seconds,
+        returns None if there wasn't time to look at every page; the pages already looked
+        at are remembered, so the next call carries on from there."""
+        start = time.monotonic()
+        for i in range(self.page_count):
+            k = self.key(i)
+            if k not in self._needs_ocr:
+                if budget is not None and time.monotonic() - start > budget:
+                    return None
+                self._needs_ocr[k] = page_needs_ocr(self.doc[i])
+            if self._needs_ocr[k]:
+                return True
+        return False
 
     # --- undo ---------------------------------------------------------------
     def checkpoint(self):
@@ -183,6 +211,7 @@ class PdfDocument(QObject):
         self.doc = fitz.open("pdf", data)
         self.generation += 1
         self._versions.clear()
+        self._needs_ocr.clear()
         self.set_modified(True)
         self.structure_changed.emit()
 

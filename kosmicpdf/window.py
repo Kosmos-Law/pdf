@@ -8,7 +8,7 @@ from PySide6.QtGui import (QAction, QActionGroup, QCursor, QDrag, QGuiApplicatio
                            QMouseEvent)
 from PySide6.QtWidgets import (QApplication, QComboBox, QDoubleSpinBox, QFileDialog, QHBoxLayout,
                                QInputDialog, QLabel, QLineEdit, QMainWindow, QMenu, QMessageBox,
-                               QProgressDialog, QPushButton, QSplitter, QTabBar, QTabWidget,
+                               QProgressDialog, QPushButton, QSizePolicy, QSplitter, QTabBar, QTabWidget,
                                QToolBar, QToolButton, QVBoxLayout, QWidget)
 
 from . import dialogs
@@ -48,7 +48,7 @@ LUCIDE = {
     "extract": "file-output", "insert_blank": "file-plus", "insert_file": "file-input",
     "zoom_in": "zoom-in", "zoom_out": "zoom-out", "fit_width": "move-horizontal", "fit_page": "maximize",
     "thumbs": "panel-left", "bates": "hash", "ocr": "scan-text", "pdfa": "file-check", "flatten": "layers",
-    "redact_search": "text-search", "apply_redactions": "check-check", "about": "info",
+    "redact_search": "text-search", "apply_redactions": "check-check", "redact_done": "x", "about": "info",
     "mode_select": "text-cursor", "mode_highlight": "highlighter", "mode_typewriter": "type", "mode_redact": "eye-off",
 }
 
@@ -407,6 +407,8 @@ class MainWindow(QMainWindow):
         self.font_size.valueChanged.connect(lambda v: self.tab and self.tab.view.set_font_size(v))
         self.hl_color = HIGHLIGHT_COLORS["Yellow"]
         self.colors = None
+        self._ocr_check = QTimer(self, singleShot=True, interval=10)
+        self._ocr_check.timeout.connect(self._check_ocr)
         self.build_actions()
         self.build_menus()
         self.build_toolbar()
@@ -473,11 +475,12 @@ class MainWindow(QMainWindow):
         A("actual", "&Actual Size", lambda: self.tab and self.tab.view.set_zoom(1.0), "Ctrl+0")
         A("thumbs", "&Thumbnails", self.toggle_thumbs, "F4", checkable=True).setChecked(True)
         A("bates", "&Bates Numbering…", self.bates)
-        A("ocr", "&OCR (Make Searchable)…", self.ocr)
+        A("ocr", "&OCR (Make Searchable)…", self.ocr).setIconText("OCR")
         A("pdfa", "Convert to &PDF/A…", self.pdfa)
         A("flatten", "&Flatten Annotations and Forms", self.flatten)
-        A("redact_search", "Mark Text for Redaction…", self.redact_search)
+        A("redact_search", "Mark Text for Redaction…", self.redact_search).setIconText("Mark Text…")
         A("apply_redactions", "Apply Redactions", self.apply_redactions, tip="Permanently remove everything marked for redaction")
+        A("redact_done", "Done", lambda: self.set_mode("select"), tip="Finish redacting and go back to selecting text")
         A("about", "&About Kosmic PDF", self.about)
 
         self.mode_group = QActionGroup(self)
@@ -551,14 +554,72 @@ class MainWindow(QMainWindow):
         tb.addWidget(colors)
         tb.addAction(a["mode_typewriter"])
         tb.addWidget(self.font_size)
-        tb.addAction(a["mode_redact"])
-        tb.addAction(a["apply_redactions"])
+        tb.addSeparator()
+        tb.addAction(a["ocr"])
+        self.ocr_button = tb.widgetForAction(a["ocr"])
         # Common commands are icons with tooltips; the tools keep a label so they are easy to find.
-        labelled = {a[n] for n in ("mode_select", "mode_highlight", "mode_typewriter", "mode_redact", "apply_redactions")}
+        labelled = {a[n] for n in ("mode_select", "mode_highlight", "mode_typewriter", "ocr")}
         tb.setToolButtonStyle(Qt.ToolButtonIconOnly)
         for b in tb.findChildren(QToolButton):
             if b.defaultAction() in labelled:
                 b.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
+        self.build_redact_bar()
+
+    def build_redact_bar(self):
+        """A second row that appears only while redacting (Tools › Redact, or R), with the
+        commands that go with it. Redaction is occasional work, so its tools stay off the
+        main toolbar the rest of the time."""
+        a = self.actions_by_name
+        bar = self.redact_bar = QToolBar("Redaction")
+        bar.setObjectName("redactBar")
+        bar.setMovable(False)
+        bar.setIconSize(QSize(theme.TOOLBAR_ICON, theme.TOOLBAR_ICON))
+        bar.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
+        bar.toggleViewAction().setVisible(False)       # not offered in the toolbar menu
+        self.addToolBarBreak()
+        self.addToolBar(bar)
+        self.redact_icon = QLabel()
+        bar.addWidget(self.redact_icon)
+        bar.addWidget(QLabel("<b>Redacting.</b> Drag a box around anything that should be removed."))
+        bar.addSeparator()
+        bar.addAction(a["redact_search"])
+        spacer = QWidget()
+        spacer.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        bar.addWidget(spacer)
+        self.redact_count = QLabel()
+        bar.addWidget(self.redact_count)
+        bar.addAction(a["apply_redactions"])
+        bar.addAction(a["redact_done"])
+        bar.hide()
+
+    def update_redact_bar(self):
+        if not self.redact_bar.isVisible():
+            return
+        n = self.tab.pdoc.redaction_count() if self.tab else 0
+        self.redact_count.setText(f"{n} area{'' if n == 1 else 's'} marked  " if n else "Nothing marked yet  ")
+
+    # --- OCR button -----------------------------------------------------------
+    def check_ocr_soon(self):
+        """Look, a little at a time, for pages that are scans without text, and light up
+        the OCR button if there are any."""
+        self._ocr_check.start()
+
+    def _check_ocr(self):
+        t = self.tab
+        found = t.pdoc.needs_ocr(budget=0.03) if t else False
+        if found is None:                  # a long document: carry on after the window has had a turn
+            self._ocr_check.start()
+            return
+        self.ocr_button.setProperty("attention", found)
+        self.ocr_button.style().unpolish(self.ocr_button)
+        self.ocr_button.style().polish(self.ocr_button)
+        self.actions_by_name["ocr"].setToolTip(
+            "Some pages are scans without text. OCR them to make the document searchable" if found
+            else "OCR (Make Searchable)")
+        if found and not getattr(t.pdoc, "ocr_hint_shown", False):
+            t.pdoc.ocr_hint_shown = True
+            self.statusBar().showMessage("This document has scanned pages without text. "
+                                         "OCR will make them searchable.", 10000)
 
     # --- state --------------------------------------------------------------
     def update_window_title(self):
@@ -571,7 +632,7 @@ class MainWindow(QMainWindow):
         self.tabs.setVisible(has)
         self.empty.setVisible(not has)
         for n, a in self.actions_by_name.items():
-            if n not in ("open", "new_window", "combine", "images", "quit", "about", "thumbs"):
+            if n not in ("open", "new_window", "combine", "images", "quit", "about", "thumbs", "redact_done"):
                 a.setEnabled(has)
         if has:
             pdoc = self.tab.pdoc
@@ -585,11 +646,17 @@ class MainWindow(QMainWindow):
             self.zoom_box.setEditText({"width": "Fit width", "page": "Fit page"}.get(z.fit, f"{round(z.zoom * 100)}%"))
         self.update_window_title()
 
+    def update_document_state(self):
+        """After the document in view changes, or a different one comes into view."""
+        self.update_state()
+        self.update_redact_bar()
+        self.check_ocr_soon()
+
     def _tab_changed(self, _):
         t = self.tab
         if t:
             self.apply_settings(t)
-        self.update_state()
+        self.update_document_state()
 
     def apply_theme(self):
         """Recolour icons, pages and panels from the current palette (light or dark)."""
@@ -605,6 +672,7 @@ class MainWindow(QMainWindow):
             t.thumbs.apply_colors(colors)
         if hasattr(self, "color_button"):
             self.color_button.setIcon(self.hl_icon())
+            self.redact_icon.setPixmap(lucide(LUCIDE["mode_redact"], colors.text).pixmap(theme.TOOLBAR_ICON))
             self.clear_action.setIcon(lucide("eraser", colors.text))
         app = QApplication.instance()
         sheet = stylesheet(colors)
@@ -630,6 +698,8 @@ class MainWindow(QMainWindow):
         for t in self.doc_tabs():
             t.view.mode = mode
             t.view.clear_selection()
+        self.redact_bar.setVisible(mode == "redact")
+        self.update_redact_bar()
 
     def hl_icon(self):
         return lucide("eraser", self.colors.text) if self.hl_color is None else swatch(self.hl_color)
@@ -703,7 +773,7 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage(msg, 6000)
 
     def _doc_changed(self, *_):
-        self.update_state()
+        self.update_document_state()
 
     def _tab_menu(self, pos):
         i = self.tabs.tabBar().tabAt(pos)
