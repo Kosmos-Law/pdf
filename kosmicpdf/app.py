@@ -194,7 +194,7 @@ def main():
     defer_import("pymupdf")
     from PySide6.QtCore import QSettings
     from PySide6.QtWidgets import QApplication
-    from .theme import follow_color_scheme
+    from .theme import LucideStyle, follow_color_scheme
     from .window import MainWindow
 
     # For test launches: keep settings (recent files, last folder) out of the user's own.
@@ -206,6 +206,7 @@ def main():
     app.setApplicationVersion(__version__)
     app.setDesktopFileName(FLATPAK_ID or ("kosmicpdf-dev" if DEV else "kosmicpdf"))   # the installed .desktop file
     app.setWindowIcon(app_icon())
+    app.setStyle(LucideStyle(app.style().name()))
     follow_color_scheme(app)
     if "--new-instance" not in sys.argv:
         app.instance_server = InstanceServer(open_from_another_launch)   # lives as long as the app

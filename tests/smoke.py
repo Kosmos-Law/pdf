@@ -6,7 +6,7 @@ import shutil
 import sys
 
 import pymupdf as fitz
-from PySide6.QtCore import QEvent, QPoint, QPointF, Qt, QTimer
+from PySide6.QtCore import QEvent, QPoint, QPointF, QSize, Qt, QTimer
 from PySide6.QtGui import QGuiApplication, QMouseEvent
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication, QMessageBox, QToolButton
@@ -447,14 +447,17 @@ drag(r.topLeft().toPoint() + QPoint(2, 4), text_pos(v, 3, "12345").bottomRight()
 check("dragging over a highlight still selects text", "onfidential account 12345" in v.selected_text() and v.sel_annot is None,
       repr(v.selected_text()))
 v.clear_selection()
+mouse(v.canvas, "move", r.center().toPoint(), Qt.NoButton); pump()
+check("hovering over a highlight keeps the text cursor", v.canvas.cursor().shape() == Qt.IBeamCursor,
+      str(v.canvas.cursor().shape()))
 mouse(v.canvas, "press", r.center().toPoint()); mouse(v.canvas, "release", r.center().toPoint()); pump()
-check("clicking a highlight selects it", v.sel_annot is not None)
-v.recolour_selected(HIGHLIGHT_COLORS["Purple"])
-check("recolour a highlight", [c for _, c in highlights(3)] == [rnd(HIGHLIGHT_COLORS["Purple"])])
-QApplication.sendEvent(v.canvas, QKeyEvent(QEvent.KeyPress, Qt.Key_Delete, Qt.NoModifier)); pump()
-check("Delete removes the selected highlight", highlights(3) == [])
+check("clicking a highlight doesn't select it as an object", v.sel_annot is None)
+drag(r.topLeft().toPoint() + QPoint(1, 4), r.bottomRight().toPoint() - QPoint(1, 4))
+w.set_hl_color(HIGHLIGHT_COLORS["Purple"]); pump()
+check("selecting highlighted text and picking a colour recolours it (no stacking)",
+      [c for _, c in highlights(3)] == [rnd(HIGHLIGHT_COLORS["Purple"])], str(highlights(3)))
 t.pdoc.undo(); pump()
-check("undo restores it", len(highlights(3)) == 1)
+check("undo brings back the old colour", [c for _, c in highlights(3)] == [green])
 
 w.set_mode("highlight")
 w.set_hl_color(None)
@@ -733,10 +736,28 @@ QTest.keyClick(fb.edit, Qt.Key_Escape)
 check("Esc closes the bar and clears the marks", fb.isHidden() and not ft.view.find_hits)
 w.actions_by_name["find"].trigger(); settle()
 check("reopening brings the last search back", fb.isVisible() and fb.edit.text() == "lazy dog" and ft.view.find_hits)
+fbtn = w.toolbar.widgetForAction(w.actions_by_name["find_bar"])
+zoom_at = w.toolbar.actions().index(w.actions_by_name["zoom_in"])
+check("Find button sits just after the zoom controls, pressed while the bar is open",
+      w.toolbar.actions()[zoom_at + 1] is w.actions_by_name["find_bar"] and fbtn.isChecked())
+QTest.mouseClick(fbtn, Qt.LeftButton); pump()
+check("clicking it again closes the bar", fb.isHidden() and not fbtn.isChecked() and not ft.view.find_hits)
+QTest.mouseClick(fbtn, Qt.LeftButton); pump()
+check("and once more opens it", fb.isVisible() and fbtn.isChecked())
 fb.close_bar()
 ft.pdoc.modified = False
 w.close_tab(ft)
 pump()
+
+# --- dialogs use Lucide icons -----------------------------------------------------------------------------------
+from PySide6.QtWidgets import QStyle  # noqa: E402
+from kosmicpdf.theme import LucideStyle  # noqa: E402
+lstyle = LucideStyle(app.style().name())
+discard = lstyle.standardIcon(QStyle.SP_DialogDiscardButton)
+question = lstyle.standardIcon(QStyle.SP_MessageBoxQuestion)
+check("dialog buttons and message boxes get Lucide icons, drawn once",
+      not discard.isNull() and discard.cacheKey() == lstyle.standardIcon(QStyle.SP_DialogDiscardButton).cacheKey()
+      and QSize(32, 32) in question.availableSizes(), str(question.availableSizes()))
 
 # --- page number field ----------------------------------------------------------------------------------------
 w.tabs.setCurrentWidget(t); pump()

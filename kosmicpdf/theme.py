@@ -9,7 +9,7 @@ import os
 from PySide6.QtCore import QByteArray, QPointF, QRectF, Qt
 from PySide6.QtGui import QColor, QIcon, QImage, QPainter, QPalette, QPen, QPixmap
 from PySide6.QtSvg import QSvgRenderer
-from PySide6.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication, QProxyStyle, QStyle
 
 ICON_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "icons")
 CACHE_DIR = os.path.join(os.environ.get("XDG_CACHE_HOME", os.path.expanduser("~/.cache")), "kosmicpdf", "icons")
@@ -18,6 +18,7 @@ NOTE_MENU_ICON = 12    # px, the menu button on a typewriter note
 ICON_STROKE = 1.5      # Lucide line width in its 24-unit grid; its default of 2 looks heavy at this size
 ICON_OPACITY = 1.0
 BADGE = "#c62828"      # the red dot on a button that has something waiting: Save, or OCR for a scan
+WARNING = "#d19a1e"    # amber, for the warning symbol in message boxes
 REDACT = "#c0392b"     # a muted red, tinting the bar shown while redacting
 
 
@@ -106,17 +107,18 @@ def icon_sizes():
     return sorted({round(n * r) for n in (NOTE_MENU_ICON, TOOLBAR_ICON) for r in ratios})
 
 
-def lucide(name, color, dot=False, stripe=None):
+def lucide(name, color, dot=False, stripe=None, sizes=None):
     """A crisp QIcon from a bundled Lucide SVG in the given colour, optionally with a
     red dot in its bottom right corner (see BADGE), or drawn a little smaller above a
-    stripe of colour (an RGB tuple), like the highlighter in a word processor."""
+    stripe of colour (an RGB tuple), like the highlighter in a word processor. Drawn at
+    the toolbar's sizes unless `sizes` (in device pixels) says otherwise."""
     path = os.path.join(ICON_DIR, f"{name}.svg")
     if not os.path.exists(path):
         return QIcon()
     svg = open(path, encoding="utf-8").read()
     icon = QIcon()
     svg = svg.replace('stroke-width="2"', f'stroke-width="{ICON_STROKE}"')
-    sizes = icon_sizes()
+    sizes = sizes or icon_sizes()
     for mode, opacity in ((QIcon.Normal, ICON_OPACITY), (QIcon.Disabled, 0.38 * ICON_OPACITY)):
         data = QByteArray(svg.replace('stroke="currentColor"',
                                       f'stroke="{color.name()}" stroke-opacity="{opacity}"').encode())
@@ -139,6 +141,46 @@ def lucide(name, color, dot=False, stripe=None):
             p.end()
             icon.addPixmap(QPixmap.fromImage(img), mode)
     return icon
+
+
+# The icons Qt asks the style for in dialogs, drawn from Lucide rather than taken from
+# the desktop's icon theme, whose filled icons look heavy beside the rest of the app.
+DIALOG_ICONS = {
+    QStyle.SP_DialogSaveButton: "save", QStyle.SP_DialogDiscardButton: "trash-2", QStyle.SP_DialogCancelButton: "x",
+    QStyle.SP_DialogCloseButton: "x", QStyle.SP_DialogNoButton: "x", QStyle.SP_DialogOkButton: "check",
+    QStyle.SP_DialogYesButton: "check", QStyle.SP_DialogApplyButton: "check",
+    QStyle.SP_DialogOpenButton: "folder-open", QStyle.SP_DialogResetButton: "rotate-ccw",
+}
+MESSAGE_ICONS = {      # the symbol beside a message box's text, and its colour (None: the theme's accent)
+    QStyle.SP_MessageBoxQuestion: ("circle-question-mark", None), QStyle.SP_MessageBoxInformation: ("info", None),
+    QStyle.SP_MessageBoxWarning: ("triangle-alert", WARNING), QStyle.SP_MessageBoxCritical: ("circle-x", BADGE),
+}
+MESSAGE_ICON = 32      # px, as Qt lays out message boxes
+
+
+class LucideStyle(QProxyStyle):
+    """The desktop's own style, but with Lucide icons in dialogs. Install it with
+    app.setStyle(LucideStyle(app.style().name()))."""
+
+    def __init__(self, base):
+        super().__init__(base)
+        self._icons = {}
+
+    def standardIcon(self, which, option=None, widget=None):
+        pal = QApplication.palette()
+        if which in DIALOG_ICONS:
+            name, color, sizes = DIALOG_ICONS[which], pal.color(QPalette.ButtonText), None
+        elif which in MESSAGE_ICONS:
+            name, color = MESSAGE_ICONS[which]
+            color = QColor(color) if color else pal.color(QPalette.Highlight)
+            ratios = {s.devicePixelRatio() for s in QApplication.screens()} or {1.0}
+            sizes = sorted({round(MESSAGE_ICON * r) for r in ratios})
+        else:
+            return super().standardIcon(which, option, widget)
+        key = (name, color.name())
+        if key not in self._icons:
+            self._icons[key] = lucide(name, color, sizes=sizes)
+        return self._icons[key]
 
 
 def draw_stripe(p, size, rgb, opacity):

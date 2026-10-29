@@ -11,7 +11,7 @@ from PySide6.QtGui import (QColor, QFont, QFontMetricsF, QGuiApplication, QImage
 from PySide6.QtWidgets import QApplication, QFrame, QMenu, QScrollArea, QTextEdit, QToolButton, QWidget
 
 from .core import MIME_PAGES, mime_pdf_bytes, parse_da_fontsize
-from .theme import NOTE_MENU_ICON, Colors, draw_page_shadow, lucide, swatch
+from .theme import NOTE_MENU_ICON, Colors, draw_page_shadow, lucide
 
 MARGIN = 12      # space around and between pages, in screen pixels
 FIND_OTHER = QColor(255, 222, 0, 95)       # find matches: yellow, stronger than the firm's pale highlight
@@ -30,6 +30,19 @@ HIGHLIGHT_COLORS = {
     "Purple": _hex("#dedce6"),
     "Beige": _hex("#ddd8c3"),
 }
+
+
+def text_markup(annot_type):
+    """Highlights and their kin. They belong to the text, so the mouse passes through
+    them to the text beneath: select the text to change or clear them."""
+    return annot_type in (fitz.PDF_ANNOT_HIGHLIGHT, fitz.PDF_ANNOT_UNDERLINE, fitz.PDF_ANNOT_STRIKE_OUT,
+                          fitz.PDF_ANNOT_SQUIGGLY)
+
+
+def highlight_rects(annot):
+    """The marked areas of a highlight, one rectangle per line."""
+    v = annot.vertices or []
+    return [fitz.Quad(v[k:k + 4]).rect for k in range(0, len(v) - 3, 4)] or [annot.rect]
 
 
 def movable(annot_type):
@@ -660,7 +673,7 @@ class PageView(QScrollArea):
         page = self._hit_page = self.pdoc.doc[i]
         hit = None
         for a in page.annots():
-            if (a.rect + (-2, -2, 2, 2)).contains(pt):
+            if not text_markup(a.type[0]) and (a.rect + (-2, -2, 2, 2)).contains(pt):
                 hit = a  # last one wins: topmost
         return hit
 
@@ -698,7 +711,7 @@ class PageView(QScrollArea):
                 self.canvas.update()
                 return
             if a:
-                # A click selects a highlight (so Delete removes it); a drag still selects the text.
+                # A click selects the annotation (so Delete removes it); a drag still selects the text.
                 self.sel_annot = (i, a.xref)
         chars = self.chars(i)
         idx = nearest_char(chars, pt, max_dist=None if self.mode == "select" else 30)
@@ -847,17 +860,8 @@ class PageView(QScrollArea):
                     si, line_rects(self.chars(si), lo, hi)))
             menu.addAction("Mark for redaction", self.redact_selection)
         if self.sel_annot:
-            ai, xref = self.sel_annot
-            page = self.pdoc.doc[ai]
-            annot = page.load_annot(xref)
-            if annot and annot.type[0] == fitz.PDF_ANNOT_HIGHLIGHT:
-                if not menu.isEmpty():
-                    menu.addSeparator()
-                menu.addAction("Remove highlight", self.delete_selected_annot)
-                colours = menu.addMenu("Highlight colour")
-                for name, rgb in HIGHLIGHT_COLORS.items():
-                    colours.addAction(swatch(rgb), name, lambda rgb=rgb: self.recolour_selected(rgb))
-            elif annot:
+            annot = self.pdoc.doc[self.sel_annot[0]].load_annot(self.sel_annot[1])
+            if annot:
                 menu.addAction("Delete annotation", self.delete_selected_annot)
         if not menu.isEmpty():
             menu.exec(e.globalPos())
@@ -908,9 +912,15 @@ class PageView(QScrollArea):
             self.canvas.update()
 
     # --- annotations --------------------------------------------------------
-    def add_highlight(self, i, rects):
+    def add_highlight(self, i, rects, replace=()):
+        """Highlight rects on page i in the current colour, in place of the highlights
+        whose xrefs are in `replace`."""
         self.pdoc.checkpoint()
         page = self.pdoc.doc[i]
+        for x in replace:
+            old = page.load_annot(x)
+            if old:
+                page.delete_annot(old)
         a = page.add_highlight_annot(quads=[fitz.Rect(r).quad for r in rects])
         a.set_colors(stroke=self.hl_color or HIGHLIGHT_COLORS["Yellow"])
         a.update()
@@ -926,11 +936,17 @@ class PageView(QScrollArea):
         page = self._hit_page = self.pdoc.doc[i]
         hits = []
         for a in page.annots(types=[fitz.PDF_ANNOT_HIGHLIGHT]):
-            v = a.vertices or []
-            quads = [fitz.Quad(v[k:k + 4]).rect for k in range(0, len(v) - 3, 4)] or [a.rect]
-            if any(q.intersects(r) or q.contains(r.tl) for q in quads for r in rects):
+            if any(q.intersects(r) or q.contains(r.tl) for q in highlight_rects(a) for r in rects):
                 hits.append(a.xref)
         return hits
+
+    def highlights_within(self, i, rects):
+        """xrefs of highlights on page i lying wholly inside rects. Highlighting the same
+        text again replaces them, so choosing a new colour recolours rather than stacks."""
+        page = self._hit_page = self.pdoc.doc[i]
+        grown = [fitz.Rect(r) + (-2, -2, 2, 2) for r in rects]
+        return [a.xref for a in page.annots(types=[fitz.PDF_ANNOT_HIGHLIGHT])
+                if all(any(g.contains(q) for g in grown) for q in highlight_rects(a))]
 
     def erase_highlights(self, i, rects):
         xrefs = self.highlights_touching(i, rects)
@@ -946,18 +962,6 @@ class PageView(QScrollArea):
         self.pdoc.edited([i])
         self.status.emit(f"Removed {len(xrefs)} highlight(s).")
 
-    def recolour_selected(self, rgb):
-        if not self.sel_annot:
-            return
-        i, xref = self.sel_annot
-        self.pdoc.checkpoint()
-        page = self.pdoc.doc[i]
-        a = page.load_annot(xref)
-        if a:
-            a.set_colors(stroke=rgb)
-            a.update()
-        self.pdoc.edited([i])
-
     def highlight_selection(self):
         if not self.sel:
             return
@@ -965,7 +969,7 @@ class PageView(QScrollArea):
         rects = line_rects(self.chars(i), lo, hi)
         self.sel = None
         if rects:
-            self.add_highlight(i, rects)
+            self.add_highlight(i, rects, replace=self.highlights_within(i, rects))
 
     def highlighter_on_selection(self):
         """What the Highlight button does to text that is already selected: highlight it in

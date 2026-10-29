@@ -42,7 +42,7 @@ def short_folder(path):
 LUCIDE = {
     "open": "folder-open", "save": "save", "save_as": "save", "close_tab": "x", "new_window": "app-window",
     "combine": "combine", "images": "image", "quit": "log-out", "undo": "undo-2", "redo": "redo-2",
-    "copy": "copy", "cut": "scissors", "paste": "clipboard-paste", "find": "search",
+    "copy": "copy", "cut": "scissors", "paste": "clipboard-paste", "find": "search", "find_bar": "search",
     "cut_pages": "scissors", "copy_pages": "copy", "paste_pages": "clipboard-paste", "delete_pages": "trash-2",
     "rotate_left": "rotate-ccw", "rotate_right": "rotate-cw", "rotate_180": "refresh-ccw",
     "extract": "file-output", "insert_blank": "file-plus", "insert_file": "file-input",
@@ -565,6 +565,9 @@ class MainWindow(QMainWindow):
         A("paste", "&Paste Pages", self.on_tab("paste_pages"), QKeySequence.Paste)
         A("select_all", "Select &All", self.select_all, QKeySequence.SelectAll)
         A("find", "&Find…", lambda: self.findbar.open_bar(), QKeySequence.Find, tip="Find in document (Ctrl+F)")
+        # The toolbar's Find button: pressed while the find bar is open, and a second click closes it.
+        A("find_bar", "Find", lambda on: self.findbar.open_bar() if on else self.findbar.close_bar(),
+          tip="Find in document (Ctrl+F)", checkable=True)
         A("find_next", "Find &Next", lambda: self.find_step(1), [QKeySequence(QKeySequence.FindNext), QKeySequence("Ctrl+G")])
         A("find_prev", "Find Pre&vious", lambda: self.find_step(-1),
           [QKeySequence(QKeySequence.FindPrevious), QKeySequence("Ctrl+Shift+G")])
@@ -648,6 +651,7 @@ class MainWindow(QMainWindow):
         tb.addAction(a["zoom_out"])
         tb.addWidget(self.zoom_box)
         tb.addAction(a["zoom_in"])
+        tb.addAction(a["find_bar"])
         tb.addSeparator()
         tb.addAction(a["rotate_left"])
         tb.addAction(a["rotate_right"])
@@ -668,10 +672,6 @@ class MainWindow(QMainWindow):
         tb.addWidget(colors)
         tb.addAction(a["mode_typewriter"])
         tb.addWidget(self.font_size)
-        spacer = QWidget()
-        spacer.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
-        tb.addWidget(spacer)
-        tb.addAction(a["find"])
         # Common commands are icons with tooltips; the tools keep a label so they are easy to find.
         labelled = {a[n] for n in ("mode_select", "mode_highlight", "mode_typewriter", "ocr")}
         tb.setToolButtonStyle(Qt.ToolButtonIconOnly)
@@ -680,6 +680,7 @@ class MainWindow(QMainWindow):
                 b.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
         self.build_redact_bar()
         self.findbar = FindBar(self)
+        self.findbar.visibilityChanged.connect(a["find_bar"].setChecked)
         self.addToolBarBreak()
         self.addToolBar(self.findbar)
 
