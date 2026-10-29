@@ -732,6 +732,23 @@ x11.finish_startup_notification("abc_TIME1")
 if saved_display is not None:
     os.environ["DISPLAY"] = saved_display
 check("without an X display, the window-manager requests quietly do nothing", True)
+class Win:   # a stand-in window: when it was last used, and whether it's on the workspace in view
+    def __init__(self, used, here):
+        self.last_used, self.here = used, here
+
+
+older_here, newest_elsewhere, oldest = Win(5, True), Win(9, False), Win(1, True)
+pick = appmod.window_for_files
+check("a file from another launch goes to the window used most recently",
+      pick([oldest, newest_elsewhere, older_here]) is newest_elsewhere)
+check("…but one on the workspace in view comes first",
+      pick([oldest, newest_elsewhere, older_here], lambda x: x.here) is older_here)
+check("…and with none on this workspace, or where that can't be told, the most recent still wins",
+      pick([Win(2, False), newest_elsewhere], lambda x: x.here) is newest_elsewhere
+      and pick([oldest, newest_elsewhere], lambda x: None) is newest_elsewhere)
+w_new = window.MainWindow()
+check("opening a window counts as using it", w_new.last_used > w.last_used)
+w_new.close(); pump()
 n_tabs = w.tabs.count()
 appmod.open_from_another_launch([os.path.join(work, "second.pdf")])
 pump()

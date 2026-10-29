@@ -129,10 +129,26 @@ def app_icon():
     return icon
 
 
+def window_for_files(windows, here=None):
+    """The window a file from another launch goes to: the one used most recently, out of
+    those on the workspace in view if any are. `here(window)` says whether a window is on
+    that workspace (True, False, or None where that can't be told, as on Wayland)."""
+    by_use = sorted(windows, key=lambda w: w.last_used, reverse=True)
+    if here:
+        nearby = [w for w in by_use if here(w)]
+        if nearby:
+            return nearby[0]
+    return by_use[0] if by_use else None
+
+
 def open_from_another_launch(paths, token=None):
     from PySide6.QtGui import QGuiApplication
     from .window import WINDOWS, MainWindow
-    win = next((w for w in reversed(WINDOWS) if w.isActiveWindow()), WINDOWS[-1] if WINDOWS else None)
+    here = None
+    if QGuiApplication.platformName() == "xcb":
+        from .x11 import on_current_workspace
+        here = lambda w: on_current_workspace(int(w.winId()))  # noqa: E731
+    win = window_for_files(WINDOWS, here)
     fresh = win is None or not paths
     if fresh:                      # launched from the menu: a fresh window, on the workspace in view
         win = MainWindow()

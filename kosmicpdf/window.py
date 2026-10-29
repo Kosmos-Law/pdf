@@ -1,4 +1,5 @@
 """Main window, document tabs, and detachable tab bar."""
+import itertools
 import os
 import tempfile
 
@@ -20,6 +21,7 @@ from .theme import Colors, lucide, stylesheet, swatch
 from .thumbs import ThumbPane
 
 WINDOWS = []   # every open MainWindow, so tabs can find their way between them
+_uses = itertools.count(1)     # a window's last_used: higher is more recent (see MainWindow.changeEvent)
 RECENT_MAX = 12
 THUMBS_WIDTH = 170      # px, the page panel's width until it is dragged wider or narrower
 EMPTY_TEXT = "Open a PDF (Ctrl+O), or drop files here."
@@ -482,6 +484,7 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         WINDOWS.append(self)
+        self.last_used = next(_uses)      # opening a window counts as using it
         self.setAttribute(Qt.WA_DeleteOnClose)
         self.resize(1200, 860)
         self.setAcceptDrops(True)
@@ -882,6 +885,8 @@ class MainWindow(QMainWindow):
     def changeEvent(self, e):
         if e.type() in (QEvent.PaletteChange, QEvent.ThemeChange):
             self.apply_theme()
+        elif e.type() == QEvent.ActivationChange and self.isActiveWindow():
+            self.last_used = next(_uses)   # so a file from another launch comes here (see app.window_for_files)
         super().changeEvent(e)
 
     def apply_settings(self, t):

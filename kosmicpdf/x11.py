@@ -95,6 +95,21 @@ def finish_startup_notification(startup_id):
     x11.XCloseDisplay(dpy)                                       # flushes the messages
 
 
+def on_current_workspace(window):
+    """Whether a top-level window is on the workspace the user is on (or on every
+    workspace); None where that can't be told."""
+    x11 = _libx11()
+    dpy = x11.XOpenDisplay(None) if x11 else None
+    if not dpy:
+        return None
+    here = _cardinal(x11, dpy, x11.XDefaultRootWindow(dpy), b"_NET_CURRENT_DESKTOP")
+    there = _cardinal(x11, dpy, window, b"_NET_WM_DESKTOP")
+    x11.XCloseDisplay(dpy)
+    if here is None or there is None:
+        return None
+    return there in (here, ALL_DESKTOPS)
+
+
 def bring_to_current_workspace(window):
     """Move a top-level window to the workspace the user is on, and give it the focus,
     as `wmctrl -R` does. Used when a file opened elsewhere (say, double-clicked in the
