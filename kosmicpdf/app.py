@@ -6,7 +6,6 @@ Startup is arranged so something appears quickly. A launch that only hands files
 to the running copy does so before loading Qt. A first launch shows its window
 before PyMuPDF is loaded and the document is opened (see MainWindow.open_when_shown).
 """
-import ctypes
 import importlib.util
 import json
 import os
@@ -32,13 +31,16 @@ else:
     SOCKET_PATH = os.path.join(_runtime, f"kosmicpdf{'-dev' if DEV else ''}-{os.getuid()}.sock")
 
 
-def send_to_running(files):
-    """Hand files to an already-running Kosmic PDF. False if none is running."""
+def send_to_running(files, token=None):
+    """Hand files to an already-running Kosmic PDF. False if none is running. On Wayland,
+    `token` is this launch's activation token (XDG_ACTIVATION_TOKEN), which lets the
+    running copy bring its window forward: Wayland gives focus only to a window that
+    shows one."""
     s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
     s.settimeout(0.5)
     try:
         s.connect(SOCKET_PATH)
-        s.sendall(json.dumps(files).encode())
+        s.sendall(json.dumps({"files": files, "token": token}).encode())
         return True
     except OSError:
         return False
@@ -47,55 +49,9 @@ def send_to_running(files):
 
 
 def finish_startup_notification():
-    """Tell the desktop this launch is done, for a launch that handed its files on and
-    so never shows a window of its own. Without this the busy cursor the Menu or file
-    manager started would spin until it timed out. (Qt does this itself when a window
-    is shown.) X11's startup-notification protocol: a "remove" message sent to the
-    root window in 20-byte pieces."""
-    startup_id = os.environ.pop("DESKTOP_STARTUP_ID", "")
-    if not startup_id or not os.environ.get("DISPLAY"):
-        return
-    try:
-        x11 = ctypes.CDLL("libX11.so.6")
-    except OSError:
-        return
-    x11.XOpenDisplay.restype = ctypes.c_void_p
-    x11.XOpenDisplay.argtypes = [ctypes.c_char_p]
-    x11.XDefaultRootWindow.restype = ctypes.c_ulong
-    x11.XDefaultRootWindow.argtypes = [ctypes.c_void_p]
-    x11.XInternAtom.restype = ctypes.c_ulong
-    x11.XInternAtom.argtypes = [ctypes.c_void_p, ctypes.c_char_p, ctypes.c_int]
-    x11.XCreateSimpleWindow.restype = ctypes.c_ulong
-    x11.XCreateSimpleWindow.argtypes = [ctypes.c_void_p, ctypes.c_ulong] + [ctypes.c_int] * 2 + [ctypes.c_uint] * 3 \
-        + [ctypes.c_ulong] * 2
-    x11.XSendEvent.argtypes = [ctypes.c_void_p, ctypes.c_ulong, ctypes.c_int, ctypes.c_long, ctypes.c_void_p]
-    x11.XDestroyWindow.argtypes = [ctypes.c_void_p, ctypes.c_ulong]
-    x11.XCloseDisplay.argtypes = [ctypes.c_void_p]
-
-    class Data(ctypes.Union):
-        _fields_ = [("b", ctypes.c_char * 20), ("l", ctypes.c_long * 5)]
-
-    class ClientMessage(ctypes.Structure):   # XClientMessageEvent, padded to the size of an XEvent
-        _fields_ = [("type", ctypes.c_int), ("serial", ctypes.c_ulong), ("send_event", ctypes.c_int),
-                    ("display", ctypes.c_void_p), ("window", ctypes.c_ulong), ("message_type", ctypes.c_ulong),
-                    ("format", ctypes.c_int), ("data", Data), ("pad", ctypes.c_long * 24)]
-
-    dpy = x11.XOpenDisplay(None)
-    if not dpy:
-        return
-    root = x11.XDefaultRootWindow(dpy)
-    sender = x11.XCreateSimpleWindow(dpy, root, -100, -100, 1, 1, 0, 0, 0)
-    if any(c in startup_id for c in ' "\\'):
-        startup_id = '"' + startup_id.replace("\\", "\\\\").replace('"', '\\"') + '"'
-    message = f"remove: ID={startup_id}".encode() + b"\0"
-    for n in range(0, len(message), 20):
-        ev = ClientMessage(type=33, send_event=1, display=dpy, window=sender, format=8,    # 33 = ClientMessage
-                           message_type=x11.XInternAtom(dpy, b"_NET_STARTUP_INFO_BEGIN" if n == 0
-                                                        else b"_NET_STARTUP_INFO", 0))
-        ev.data.b = message[n:n + 20].ljust(20, b"\0")
-        x11.XSendEvent(dpy, root, 0, 1 << 22, ctypes.byref(ev))   # PropertyChangeMask, as the protocol asks
-    x11.XDestroyWindow(dpy, sender)
-    x11.XCloseDisplay(dpy)                                       # flushes the messages
+    """End the desktop's busy cursor for a launch that handed its files on (see x11)."""
+    from .x11 import finish_startup_notification as finish
+    finish(os.environ.pop("DESKTOP_STARTUP_ID", ""))
 
 
 class DeferredModule(types.ModuleType):
@@ -156,10 +112,12 @@ class InstanceServer:
             except OSError:
                 pass
         try:
-            paths = json.loads(data.decode() or "[]")
+            message = json.loads(data.decode() or "[]")
         except ValueError:
             return
-        self.on_files(paths)
+        if isinstance(message, list):      # from a launch of an earlier version: just the files
+            message = {"files": message}
+        self.on_files(message.get("files") or [], message.get("token"))
 
 
 def app_icon():
@@ -171,22 +129,37 @@ def app_icon():
     return icon
 
 
-def open_from_another_launch(paths):
+def open_from_another_launch(paths, token=None):
+    from PySide6.QtGui import QGuiApplication
     from .window import WINDOWS, MainWindow
     win = next((w for w in reversed(WINDOWS) if w.isActiveWindow()), WINDOWS[-1] if WINDOWS else None)
-    if win is None or not paths:   # launched from the menu: a fresh window
+    fresh = win is None or not paths
+    if fresh:                      # launched from the menu: a fresh window, on the workspace in view
         win = MainWindow()
         win.show()
     if paths:
         win.open_files(paths)
+    if win.isMinimized():
+        win.showNormal()
+    platform = QGuiApplication.platformName()
+    if token and platform.startswith("wayland"):
+        # Wayland gives the focus only to a window that shows the launch's activation token,
+        # and lets the compositor decide where (typically, by switching to the window's
+        # workspace). Qt reads the token from here when the window asks for the focus.
+        os.environ["XDG_ACTIVATION_TOKEN"] = token
     win.raise_()
     win.activateWindow()
+    if not fresh and platform == "xcb":
+        # On X11 the window may be on another workspace, and the window manager won't give
+        # it the focus at its own request: bring it to the user instead (see x11).
+        from .x11 import bring_to_current_workspace
+        bring_to_current_workspace(int(win.winId()))
 
 
 def main():
     files = [os.path.abspath(a) for a in sys.argv[1:] if not a.startswith("-")]
     # --new-instance runs on its own, without taking over the running copy's socket.
-    if "--new-instance" not in sys.argv and send_to_running(files):
+    if "--new-instance" not in sys.argv and send_to_running(files, os.environ.get("XDG_ACTIVATION_TOKEN")):
         finish_startup_notification()
         return 0
 

@@ -712,12 +712,31 @@ from kosmicpdf import app as appmod  # noqa: E402
 appmod.SOCKET_PATH = os.path.join(tempfile.mkdtemp(prefix="kosmicpdf-test-sock-"), "s.sock")
 check("no running instance -> handoff declines", appmod.send_to_running(["/x.pdf"]) is False)
 received = []
-server = appmod.InstanceServer(received.append)
+server = appmod.InstanceServer(lambda files, token: received.append((files, token)))
 check("handoff reaches the running instance", appmod.send_to_running(["/a.pdf", "/b.pdf"]) and (pump(30) or True)
-      and received == [["/a.pdf", "/b.pdf"]], str(received))
+      and received == [(["/a.pdf", "/b.pdf"], None)], str(received))
+appmod.send_to_running(["/c.pdf"], token="wayland-token-123"); pump(30)
+check("on Wayland, the launch's activation token goes along with the files",
+      received[-1] == (["/c.pdf"], "wayland-token-123"), str(received[-1]))
+import socket as _socket, json as _json  # noqa: E401, E402
+old = _socket.socket(_socket.AF_UNIX, _socket.SOCK_STREAM); old.connect(appmod.SOCKET_PATH)
+old.sendall(_json.dumps(["/d.pdf"]).encode()); old.close(); pump(30)
+check("a launch of an earlier version (files only) is still understood", received[-1] == (["/d.pdf"], None))
 check("app modules don't load QtNetwork", "PySide6.QtNetwork" not in sys.modules)
 os.environ.pop("DESKTOP_STARTUP_ID", None)
 appmod.finish_startup_notification()   # nothing to finish: returns quietly
+from kosmicpdf import x11  # noqa: E402
+saved_display = os.environ.pop("DISPLAY", None)
+x11.bring_to_current_workspace(12345)       # no X display (e.g. Wayland, or offscreen): does nothing
+x11.finish_startup_notification("abc_TIME1")
+if saved_display is not None:
+    os.environ["DISPLAY"] = saved_display
+check("without an X display, the window-manager requests quietly do nothing", True)
+n_tabs = w.tabs.count()
+appmod.open_from_another_launch([os.path.join(work, "second.pdf")])
+pump()
+check("a file from another launch opens in a tab of the existing window", w.tabs.count() == n_tabs + 1 or
+      any(tab.pdoc.title == "second.pdf" for tab in w.doc_tabs()))
 check("handoff without a startup id is quiet", True)
 
 # --- startup: the window first, then the document --------------------------------------------------------------
