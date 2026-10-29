@@ -28,7 +28,9 @@ SCAN_IMAGE_SHARE = 0.25   # images covering this much of a page, with no text, l
 
 
 REDACT_MARK = (0.66, 0.29, 0.36)   # mauve, as the bar shown while redacting
-REDACT_STYLES = ("black", "white")  # how redacted areas look: black boxes, or white boxes with a black border
+# How redacted areas look in a redacted copy: black boxes, white boxes with a thin black
+# border, or light grey boxes. (name: (fill, border colour or None))
+REDACT_STYLES = {"black": ((0, 0, 0), None), "white": ((1, 1, 1), (0, 0, 0)), "grey": ((0.82, 0.82, 0.82), None)}
 
 
 def mark_redaction(page, rect):
@@ -305,17 +307,18 @@ class PdfDocument(QObject):
         """A new, unsaved document with everything marked for redaction removed, named
         "<title> - Redacted.pdf" for the same folder. This document is left as it is, so
         redacting never changes the original; and the copy has no undo history, so the
-        removed content can't be brought back into it. Each redacted area is left as a
-        black box, or with style "white", a white box with a thin black border."""
+        removed content can't be brought back into it. Each redacted area is left as a box
+        in the given style (see REDACT_STYLES)."""
         doc = fitz.open("pdf", self.doc.tobytes())
         for page in doc:
             areas = [fitz.Rect(a.rect) for a in page.annots(types=[fitz.PDF_ANNOT_REDACT])]
             if not areas:
                 continue
             page.apply_redactions(images=fitz.PDF_REDACT_IMAGE_PIXELS)
-            if style == "white":
+            fill, border = REDACT_STYLES.get(style, REDACT_STYLES["black"])
+            if style != "black":                  # the redaction itself leaves black boxes
                 for r in areas:
-                    page.draw_rect(r, color=(0, 0, 0), fill=(1, 1, 1), width=0.75)
+                    page.draw_rect(r, color=border, fill=fill, width=0.75 if border else 0)
         copy = PdfDocument(doc, title=f"{os.path.splitext(self.title)[0]} - Redacted.pdf")
         copy.folder = self.folder
         copy.set_modified(True)

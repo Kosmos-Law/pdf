@@ -18,8 +18,7 @@ FIND_OTHER = QColor(255, 222, 0, 95)       # find matches: yellow, stronger than
 FIND_CURRENT = QColor(255, 204, 0, 175)
 FIND_OUTLINE = QColor(176, 132, 0)
 REDACT_WASH = QColor(168, 74, 92, 52)      # over marked areas: mauve, as the redaction bar, and see-through
-REDACT_EDGE = QColor(168, 74, 92, 170)     # the box being drawn around an area, and the remove button
-MARK_BUTTON = 16                           # px, the × at a mark's corner that removes it
+REDACT_EDGE = QColor(168, 74, 92, 170)     # the box being drawn around an area
 CACHE_PAGES = 24
 def _hex(h):
     return tuple(int(h[k:k + 2], 16) / 255 for k in (1, 3, 5))
@@ -355,30 +354,45 @@ class DragHandle(QWidget):
             QTimer.singleShot(0, self.editor._commit_unless_kept_open)
 
 
-class NoteMenuButton(QToolButton):
-    """Trash button on the top-right corner of a typewriter box. It opens a small
-    menu (Delete note) rather than deleting at once, so a stray click can't remove
-    a note. Like the handle, it takes click focus and keeps the note open."""
+class ShoulderButton(QToolButton):
+    """A small trash button on the shoulder (top right corner) of a box: a typewriter
+    note, or a redaction mark. It opens a one-item menu rather than acting at once,
+    so a stray click can't remove anything."""
     SIZE = 18
 
-    def __init__(self, editor, color, on_remove):
-        super().__init__(editor.parentWidget())
-        self.editor = editor
-        self.setFocusPolicy(Qt.ClickFocus)
-        self.setProperty("keepsTypewriterOpen", True)
+    def __init__(self, parent, color, label, tip, on_remove):
+        super().__init__(parent)
         self.setCursor(Qt.ArrowCursor)
-        self.setToolTip("Delete this note")
+        self.setToolTip(tip)
         self.setIcon(lucide("trash-2", QColor("white")))
         self.setIconSize(QSize(NOTE_MENU_ICON, NOTE_MENU_ICON))
         self.setPopupMode(QToolButton.InstantPopup)
+        self.set_color(color)
+        menu = QMenu(self)
+        menu.addAction(lucide("trash-2", QColor(self.palette().color(self.foregroundRole()))), label, on_remove)
+        self.setMenu(menu)
+
+    def set_color(self, color):
         c = QColor(color)
         self.setStyleSheet(f"QToolButton{{background:{c.name()};border:none;border-radius:4px;padding:0;}}"
                            f"QToolButton:hover,QToolButton:pressed,QToolButton:focus{{background:{c.darker(135).name()};}}"
                            "QToolButton::menu-indicator{image:none;width:0;}")
-        menu = QMenu(self)
-        menu.addAction(lucide("trash-2", QColor(self.palette().color(self.foregroundRole()))), "Delete note",
-                       lambda: on_remove(editor))
-        self.setMenu(menu)
+
+    def place_beside(self, rect):
+        """Just outside the top right corner of rect (a box on the canvas)."""
+        self.setGeometry(round(rect.right()) + 3, round(rect.top()), self.SIZE, self.SIZE)
+        self.raise_()
+
+
+class NoteMenuButton(ShoulderButton):
+    """The shoulder button of a typewriter box: Delete note. Like the handle, it
+    takes click focus and keeps the note open."""
+
+    def __init__(self, editor, color, on_remove):
+        super().__init__(editor.parentWidget(), color, "Delete note", "Delete this note", lambda: on_remove(editor))
+        self.editor = editor
+        self.setFocusPolicy(Qt.ClickFocus)
+        self.setProperty("keepsTypewriterOpen", True)
 
     def follow(self):
         g = self.editor.geometry()
@@ -433,6 +447,8 @@ class PageView(QScrollArea):
 
     def __init__(self, pdoc, parent=None):
         super().__init__(parent)
+        self._hover_mark = None       # (page, xref, canvas rect) of the redaction mark under the mouse
+        self.mark_button = None       # its shoulder button (Remove mark), made when first needed
         self.pdoc = pdoc
         self.canvas = PageCanvas(self)
         self.setWidget(self.canvas)
@@ -449,7 +465,6 @@ class PageView(QScrollArea):
         self.font_size = 12.0
         self.hl_color = HIGHLIGHT_COLORS["Yellow"]
         self.redact_by = "text"       # redact mode: "text" (select it) or "area" (draw a box)
-        self._hover_mark = None       # (page, xref, canvas rect) of the redaction mark under the mouse
         self.page_rects = []          # QRect per page in canvas coords
         self._sizes = []              # (w, h) per page in points, as last laid out
         self._cache = OrderedDict()   # (key, zoom, dpr) -> QPixmap
@@ -474,6 +489,8 @@ class PageView(QScrollArea):
 
     def apply_colors(self, colors):
         self.colors = colors
+        if self.mark_button:
+            self.mark_button.set_color(colors.accent)
         pal = self.viewport().palette()
         pal.setColor(self.viewport().backgroundRole(), colors.pages)
         self.viewport().setPalette(pal)
@@ -482,7 +499,8 @@ class PageView(QScrollArea):
 
     # --- layout -------------------------------------------------------------
     def _structure_changed(self):
-        self.sel = self.sel_annot = self._hover_mark = None
+        self.sel = self.sel_annot = None
+        self.hover_marks(None)
         self.find_hits = []
         self.find_index = -1
         self._find_pattern = None
@@ -514,6 +532,7 @@ class PageView(QScrollArea):
         return max(0.05, z)
 
     def relayout(self, keep_page=None):
+        self.hover_marks(None)            # its mark moves; it comes back with the mouse
         keep = self._current if keep_page is None else keep_page
         frac = self._scroll_fraction()
         if self.fit:
@@ -652,8 +671,6 @@ class PageView(QScrollArea):
         p.setBrush(REDACT_WASH)
         for a in page.annots(types=[fitz.PDF_ANNOT_REDACT]):
             p.drawRect(self.to_canvas(i, a.rect))
-        if self.mode == "redact" and self._hover_mark and self._hover_mark[0] == i:
-            self.paint_mark_button(p, self._hover_mark[2])
         if self.sel and self.sel[0] == i:
             p.setPen(Qt.NoPen)
             p.setBrush(self.colors.accent_alpha(80))
@@ -676,41 +693,41 @@ class PageView(QScrollArea):
                 p.setBrush(Qt.NoBrush)
                 p.drawRect(rect.adjusted(-2, -2, 2, 2))
 
-    # --- removing a redaction mark: a × on its shoulder, shown on hover ------------------
-    def mark_button(self, rect):
-        """Where the × sits for a mark drawn at rect (canvas coordinates): on its top right corner."""
-        h = MARK_BUTTON / 2
-        return QRectF(rect.right() - h, rect.top() - h, MARK_BUTTON, MARK_BUTTON)
-
-    def paint_mark_button(self, p, rect):
-        b = self.mark_button(rect)
-        p.setPen(QPen(REDACT_EDGE, 1))
-        p.setBrush(QColor("#ffffff"))
-        p.drawEllipse(b)
-        p.setPen(QPen(REDACT_EDGE.darker(130), 1.5, Qt.SolidLine, Qt.RoundCap))
-        d = MARK_BUTTON * 0.19
-        c = b.center()
-        p.drawLine(QPointF(c.x() - d, c.y() - d), QPointF(c.x() + d, c.y() + d))
-        p.drawLine(QPointF(c.x() - d, c.y() + d), QPointF(c.x() + d, c.y() - d))
-
+    # --- removing a redaction mark: a shoulder button, shown on hover --------------------
     def mark_at(self, pos):
-        """The redaction mark under pos, or whose × is under it: (page, xref, canvas rect)."""
-        i = self.page_at(pos, slack=MARK_BUTTON)      # a mark's × can stand a little off the page
+        """The redaction mark under pos, or whose shoulder button is: (page, xref, canvas rect)."""
+        i = self.page_at(pos, slack=ShoulderButton.SIZE + 3)     # the button stands just off the mark
         if i is None:
             return None
         hit = None
         page = self.pdoc.doc[i]           # its annotations are valid only while it lives
         for a in page.annots(types=[fitz.PDF_ANNOT_REDACT]):
             r = self.to_canvas(i, a.rect)
-            if r.contains(QPointF(pos)) or self.mark_button(r).contains(QPointF(pos)):
+            reach = r.united(QRectF(r.right(), r.top(), ShoulderButton.SIZE + 4, ShoulderButton.SIZE))
+            if reach.contains(QPointF(pos)):
                 hit = (i, a.xref, r)              # last one wins: topmost
         return hit
 
     def hover_marks(self, pos):
+        """Show the shoulder button of the mark under the mouse (while redacting), or hide it."""
+        if self.mark_button and self.mark_button.menu().isVisible():
+            return                                # its menu is open: keep the mark it belongs to
         hit = self.mark_at(pos) if self.mode == "redact" and pos is not None else None
-        if (hit and hit[:2]) != (self._hover_mark and self._hover_mark[:2]):
-            self._hover_mark = hit
-            self.canvas.update()
+        self._hover_mark = hit
+        if hit is None:
+            if self.mark_button:
+                self.mark_button.hide()
+            return
+        if self.mark_button is None:
+            self.mark_button = ShoulderButton(self.canvas, self.colors.accent, "Remove mark",
+                                              "Remove this redaction mark", self._remove_hovered_mark)
+            self.mark_button.setFocusPolicy(Qt.NoFocus)
+        self.mark_button.place_beside(hit[2])
+        self.mark_button.mark = hit[:2]           # the button keeps its mark, whatever the mouse does next
+        self.mark_button.show()
+
+    def _remove_hovered_mark(self):
+        self.remove_mark(*self.mark_button.mark)
 
     def remove_mark(self, i, xref):
         self.pdoc.checkpoint()
@@ -719,6 +736,8 @@ class PageView(QScrollArea):
         if a:
             page.delete_annot(a)
         self._hover_mark = None
+        if self.mark_button:
+            self.mark_button.hide()           # its mark is gone (its menu may still be closing)
         self.pdoc.edited([i])
         self.status.emit("Removed the redaction mark.")
 
@@ -739,10 +758,6 @@ class PageView(QScrollArea):
             self.editor.commit()     # clicking the page finishes the note being typed
         self.canvas.setFocus()
         if e.button() != Qt.LeftButton:
-            return
-        if self.mode == "redact" and self._hover_mark and self.mark_button(self._hover_mark[2]).contains(QPointF(pos)):
-            self._press = None
-            self.remove_mark(*self._hover_mark[:2])
             return
         i = self.page_at(pos)
         self._press = None
@@ -894,8 +909,6 @@ class PageView(QScrollArea):
         if i is not None and self.mode == "redact" and self.redact_by == "text":
             cur = Qt.IBeamCursor
         self.hover_marks(pos)
-        if self._hover_mark and self.mark_button(self._hover_mark[2]).contains(QPointF(pos)):
-            cur = Qt.PointingHandCursor
         if i is not None and self.mode == "select" and self.annot_at(i, self.to_pdf(i, pos)):
             cur = Qt.SizeAllCursor
         self.canvas.setCursor(cur)

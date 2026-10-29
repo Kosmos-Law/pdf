@@ -47,6 +47,18 @@ def pump(n=20):
         app.processEvents()
 
 
+def click_menu_item(button, label):
+    """Click the button for real, wait for its menu, then choose `label` (None = dismiss)."""
+    QTest.mouseClick(button, Qt.LeftButton, Qt.NoModifier, button.rect().center())
+    QTest.qWait(60)
+    popup = QApplication.activePopupWidget()
+    assert popup is not None and popup is button.menu(), "menu did not open"
+    if label is not None:
+        [a for a in popup.actions() if a.text() == label][0].trigger()
+    popup.close()
+    pump()
+
+
 def text_pos(view, i, word):
     """Canvas position of the first occurrence of `word` on page i."""
     r = view.pdoc.doc[i].search_for(word)[0]
@@ -219,7 +231,7 @@ check("the Tools menu keeps only Redact for redaction",
       w.actions_by_name["mode_redact"] in tools_menu.actions()
       and not {w.actions_by_name[n] for n in ("redact_search", "apply_redactions")} & set(tools_menu.actions())
       and w.actions_by_name["redact_search"] in w.redact_bar.actions()
-      and w.actions_by_name["redact_search"].text() == "Mark by Search…")
+      and w.actions_by_name["redact_search"].text() == "Search…")
 # Part of one line and on into the next, in one drag.
 words = t.pdoc.doc[0].get_text("words")
 end_of_line = next(k for k in range(len(words) - 1) if words[k][4] == "fox" and words[k + 1][4] == "jumps"
@@ -242,12 +254,18 @@ mouse(v.canvas, "release", head.bottomRight().toPoint() + QPoint(4, 4))
 check("a box drawn in Area mode is marked", t.pdoc.redaction_count() == 4)
 pg0 = t.pdoc.doc[0]          # annotations stay valid only while their page does
 box = v.to_canvas(0, list(pg0.annots(types=[fitz.PDF_ANNOT_REDACT]))[-1].rect)
+from kosmicpdf.pageview import ShoulderButton  # noqa: E402
 mouse(v.canvas, "move", box.center().toPoint(), Qt.NoButton); pump()
-button = v.mark_button(box)
-check("hovering over a mark shows its × on the corner", v._hover_mark is not None and button.center() == box.topRight())
-mouse(v.canvas, "move", button.center().toPoint(), Qt.NoButton)
-mouse(v.canvas, "press", button.center().toPoint()); mouse(v.canvas, "release", button.center().toPoint()); pump()
-check("clicking the × removes just that mark", t.pdoc.redaction_count() == 3 and v._hover_mark is None)
+mb = v.mark_button
+check("hovering over a mark shows its shoulder button, the same as a note's",
+      isinstance(mb, ShoulderButton) and mb.isVisible() and mb.popupMode() == QToolButton.InstantPopup
+      and mb.geometry().topLeft() == QPoint(round(box.right()) + 3, round(box.top())), str(mb and mb.geometry()))
+mouse(v.canvas, "move", (box.topRight() + QPointF(2, 5)).toPoint(), Qt.NoButton); pump()
+check("it stays while the mouse crosses to it", mb.isVisible())
+click_menu_item(mb, None)
+check("clicking the button only opens its menu", t.pdoc.redaction_count() == 4)
+click_menu_item(mb, "Remove mark")
+check("Remove mark in its menu removes just that mark", t.pdoc.redaction_count() == 3 and mb.isHidden())
 t.pdoc.undo(); pump()
 check("undo brings the mark back", t.pdoc.redaction_count() == 4)
 w.redact_bar.grab().save(os.path.join(OUT, "02b-redact-bar.png"))
@@ -269,6 +287,10 @@ check("the copy has the marked content removed, and no marks left",
       and not any(True for p in saved for _ in p.annots(types=[fitz.PDF_ANNOT_REDACT])))
 boxes = [d for d in saved[0].get_drawings() if d.get("fill") == (1.0, 1.0, 1.0) and d.get("color") == (0.0, 0.0, 0.0)]
 check("white style: each redacted area is a white box with a black border", len(boxes) == 4, str(len(boxes)))
+grey = t.pdoc.redacted_copy("grey")
+grey_boxes = [d for d in grey.doc[0].get_drawings() if d.get("fill") and abs(d["fill"][0] - 0.82) < 0.01
+              and d.get("color") is None]
+check("grey style: each redacted area is a light grey box", len(grey_boxes) == 4, str(len(grey_boxes)))
 saved.close()
 w.set_redact_style("black")
 check("the original is untouched: the same text, its marks still there",
@@ -416,6 +438,8 @@ check("holding a page near the top scrolls the pane", start_val > 0 and th.verti
       f"{start_val} -> {th.verticalScrollBar().value()}")
 th.dragLeaveEvent(None)
 check("panel border is 1px", t.splitter.handleWidth() == 1)
+check("the panel border takes the accent colour while it's held",
+      f"QSplitter::handle:pressed {{ background:{w.colors.accent.name()}; }}" in QApplication.instance().styleSheet())
 
 # --- typewriter stays open while the font size changes ---------------------------------------------------------
 w.set_mode("typewriter")
@@ -622,18 +646,6 @@ want = fitz.Point(200 + 3, 300 + 10) / v.zoom
 check("nudged note is saved at its new spot", nudged and abs(nudged[0].x0 - want.x) < 0.5 and abs(nudged[0].y0 - want.y) < 0.5,
       f"{nudged} want {want}")
 # --- corner button: Cut / Delete menu (two clicks, so no accidental deletes) -------------------------------------
-
-def click_menu_item(button, label):
-    """Click the button for real, wait for its menu, then choose `label` (None = dismiss)."""
-    QTest.mouseClick(button, Qt.LeftButton, Qt.NoModifier, button.rect().center())
-    QTest.qWait(60)
-    popup = QApplication.activePopupWidget()
-    assert popup is not None and popup is button.menu(), "menu did not open"
-    if label is not None:
-        [a for a in popup.actions() if a.text() == label][0].trigger()
-    popup.close()
-    pump()
-
 
 def notes_on(i):
     page = t.pdoc.doc[i]

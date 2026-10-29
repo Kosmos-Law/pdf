@@ -353,6 +353,7 @@ QMenu::separator {{ height:1px; background:{c.line.name()}; margin:4px 8px; }}
 
 QSplitter::handle {{ background:{c.line.name()}; }}
 QSplitter::handle:horizontal {{ width:1px; }}
+QSplitter::handle:pressed {{ background:{c.accent.name()}; }}
 QStatusBar {{ background:{c.window.name()}; border-top:1px solid {c.line.name()}; }}
 QStatusBar::item {{ border:none; }}
 """
