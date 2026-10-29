@@ -33,9 +33,26 @@ without the theme, Kosmic PDF falls back to a dark Kosmos palette.)
    signed repository and refreshes the `.flatpakref`/`.flatpakrepo` files in
    `~/.cache/kosmicpdf-flatpak/site/`. The first build compiles the OCR engine and
    Ghostscript (about 15 minutes); later builds reuse them (about 2 minutes).
-3. Upload the **whole** `site/` folder to `https://kosmos.law/flatpak/`, keeping
-   the existing `repo/` contents (it holds the release history users update from).
-   Use `--url` if hosting somewhere else.
+3. `tools/flatpak_deploy.sh dev` copies that build to the dev server
+   (https://darmok.link/flatpak/). James's own copy follows dev, so
+   `flatpak update` there gets the new version to try exactly as users will.
+4. `tools/flatpak_deploy.sh production` copies the **same** build, unchanged, to
+   https://kosmos.law/flatpak/, and users' copies update from it on their own.
+
+The landing page needs no change for a release: it links to
+`kosmos.law/flatpak/kosmicpdf.flatpakref`, which stays put. (`latest.json` beside
+it gives the current version and date, if a page wants to show them.) The deploy
+script copies the build's files before the repository index, so anyone updating
+meanwhile never sees an index naming files that haven't arrived, and it keeps the
+older builds the index still lists (the publish script prunes beyond five).
+
+Where the files live (set up 2026-10-29):
+
+- dev: `/home/james/kosmos-flatpak` on `dev`, served by the `darmok.link` site
+  (`/etc/nginx/sites-available/dev-server`, `location /flatpak/`, outside the
+  devauth gate since Flatpak can't sign in).
+- production: `/www/kosmos-flatpak` on `kosmos.law`, served beside the landing
+  page like `/docs` (`/etc/nginx/sites-available/kosmos-landing.conf`).
 
 Before finishing, the script installs the new build into a throwaway installation
 and runs the full test suite on the user runtime; if anything fails it stops and
@@ -49,6 +66,9 @@ sets `XDG_CONFIG_HOME` itself, so overriding that has no effect.)
 Requirements: `flatpak-builder` (`sudo apt install flatpak-builder`). The build
 SDK is downloaded into a private Flatpak installation under
 `~/.cache/kosmicpdf-flatpak`, leaving the user's own installation alone.
+
+To have your own copy follow production instead of dev:
+`flatpak remote-modify --user --url=https://kosmos.law/flatpak/repo/ kosmos`.
 
 ## The signing key
 

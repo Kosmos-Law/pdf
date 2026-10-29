@@ -4,7 +4,7 @@
 #
 #   tools/flatpak_publish.sh [--url https://kosmos.law/flatpak]
 #
-# Produces, in ~/.cache/kosmicpdf-flatpak/site/ (upload all of it to the URL):
+# Produces, in ~/.cache/kosmicpdf-flatpak/site/ (tools/flatpak_deploy.sh copies it to the servers):
 #   repo/                    the signed Flatpak repository (static files)
 #   kosmicpdf.flatpakref     "Install Kosmic PDF": opening it installs the app and
 #                            subscribes to updates from this repository
@@ -102,6 +102,4 @@ fi
 tail -1 "$cache/test-results.log"
 rm -rf "$test_inst"
 
-echo "==> Published. Upload the contents of $site to $url/"
-echo "    Users install with:  flatpak install --user $url/kosmicpdf.flatpakref"
-echo "    (or by opening kosmicpdf.flatpakref from the web page)"
+echo "==> Built and tested. Next: tools/flatpak_deploy.sh dev, try it, then tools/flatpak_deploy.sh production"
