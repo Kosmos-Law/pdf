@@ -34,6 +34,11 @@
     <color type="primary" scheme_preference="dark">#2e3440</color>
   </branding>
   <releases>
+    <release version="0.2.1" date="2026-10-29">
+      <description>
+        <p>The menus are now behind a menu button at the right of the toolbar (or F10), leaving more room for pages; every keyboard shortcut works as before. Number boxes, such as the typewriter font size, keep their text off the left edge.</p>
+      </description>
+    </release>
     <release version="0.2.0" date="2026-10-29">
       <description>
         <p>Redaction, reworked. Mark exactly the words to remove, across line breaks, or draw a box around an area; marks show as a light wash, each with a button to remove it. Save Redacted Copy saves a separate "- Redacted" copy, in black, white or light grey boxes, and never changes the original.</p>
