@@ -36,7 +36,7 @@
   <releases>
     <release version="0.2.1" date="2026-10-29">
       <description>
-        <p>The menus are now behind a menu button at the right of the toolbar (or F10), leaving more room for pages; every keyboard shortcut works as before. Number boxes, such as the typewriter font size, keep their text off the left edge.</p>
+        <p>The menus are now behind a menu button at the right of the toolbar (or F10), leaving more room for pages; every keyboard shortcut works as before. Number boxes, such as the typewriter font size, keep their text off the left edge. Opening a document no longer shows a busy cursor over the window, which already says what it's opening.</p>
       </description>
     </release>
     <release version="0.2.0" date="2026-10-29">
