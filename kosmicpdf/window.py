@@ -12,7 +12,8 @@ from PySide6.QtWidgets import (QApplication, QComboBox, QDoubleSpinBox, QFileDia
                                QToolBar, QToolButton, QVBoxLayout, QWidget)
 
 from . import dialogs
-from .core import MIME_PAGES, MIME_TAB, PdfDocument, is_image, load_any, mark_redaction, mime_pdf_bytes, pages_mime
+from .core import (MIME_PAGES, MIME_TAB, REDACT_STYLES, PdfDocument, is_image, load_any, mark_redaction, mime_pdf_bytes,
+                   pages_mime)
 from .pageview import HIGHLIGHT_COLORS, PageView
 from . import theme
 from .theme import Colors, lucide, stylesheet, swatch
@@ -603,7 +604,7 @@ class MainWindow(QMainWindow):
         A("ocr", "&OCR (Make Searchable)…", self.ocr).setIconText("OCR")
         A("pdfa", "Convert to &PDF/A…", self.pdfa)
         A("flatten", "&Flatten Annotations and Forms", self.flatten)
-        A("redact_search", "Mark Text for Redaction…", self.redact_search).setIconText("Mark Text…")
+        A("redact_search", "Mark by Search…", self.redact_search, tip="Mark every place a word or phrase appears")
         A("apply_redactions", "Save Redacted Copy…", self.apply_redactions,
           tip="Save a copy with everything marked removed for good; the original stays as it is")
         A("redact_done", "Done", lambda: self.set_mode("select"), tip="Finish redacting and go back to selecting text")
@@ -647,7 +648,7 @@ class MainWindow(QMainWindow):
         menu("&Pages", ["rotate_left", "rotate_right", "rotate_180", None, "cut_pages", "copy_pages", "paste_pages",
                         "delete_pages", None, "extract", "insert_blank", "insert_file", "select_all_pages"])
         menu("&Tools", ["mode_select", "mode_highlight", "mode_typewriter", "mode_redact", None,
-                        "redact_search", "apply_redactions", None, "bates", "ocr", "pdfa", "flatten"])
+                        "bates", "ocr", "pdfa", "flatten"])
         menu("&Help", ["about"])
 
     def build_toolbar(self):
@@ -699,6 +700,8 @@ class MainWindow(QMainWindow):
                 b.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
         self.build_redact_bar()
         self.set_redact_by("text")
+        style = dialogs.settings().value("redact/style", "black")
+        self.set_redact_style(style if style in REDACT_STYLES else "black")
         self.findbar = FindBar(self)
         self.findbar.visibilityChanged.connect(a["find_bar"].setChecked)
         self.addToolBarBreak()
@@ -723,10 +726,22 @@ class MainWindow(QMainWindow):
         bar.addSeparator()
         bar.addAction(a["redact_text"])
         bar.addAction(a["redact_area"])
-        self.redact_hint = QLabel()
-        bar.addWidget(self.redact_hint)
         bar.addSeparator()
         bar.addAction(a["redact_search"])
+        bar.addSeparator()
+        # How redacted areas look in the copy: black boxes, or white boxes with a black border.
+        style = self.redact_style_button = QToolButton()
+        style.setPopupMode(QToolButton.InstantPopup)
+        style.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
+        style.setToolTip("How redacted areas look in the redacted copy")
+        sm = QMenu(style)
+        for key, text in (("black", "Black Boxes"), ("white", "White Boxes with a Black Border")):
+            act = sm.addAction(swatch((0, 0, 0) if key == "black" else (1, 1, 1)), text,
+                               lambda k=key: self.set_redact_style(k))
+            act.setData(key)
+            act.setCheckable(True)
+        style.setMenu(sm)
+        bar.addWidget(style)
         spacer = QWidget()
         spacer.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         bar.addWidget(spacer)
@@ -740,11 +755,19 @@ class MainWindow(QMainWindow):
         """Redact by selecting text, or by drawing a box around an area."""
         self.redact_by = how
         self.actions_by_name[f"redact_{how}"].setChecked(True)
-        self.redact_hint.setText("  Select the text to remove.  " if how == "text"
-                                 else "  Draw a box around anything to remove.  ")
         for t in self.doc_tabs():
             t.view.redact_by = how
             t.view.clear_selection()
+
+    def set_redact_style(self, style):
+        """Black boxes, or white boxes with a black border, in the redacted copy (remembered)."""
+        self.redact_style = style
+        dialogs.settings().setValue("redact/style", style)
+        b = self.redact_style_button
+        b.setText("Black Boxes" if style == "black" else "White Boxes")
+        b.setIcon(swatch((0, 0, 0) if style == "black" else (1, 1, 1)))
+        for act in b.menu().actions():
+            act.setChecked(act.data() == style)
 
     def update_redact_bar(self):
         if not self.redact_bar.isVisible():
@@ -1329,13 +1352,13 @@ class MainWindow(QMainWindow):
 
     def redact_search(self):
         t = self.tab
-        term, ok = QInputDialog.getText(self, "Mark Text for Redaction",
+        term, ok = QInputDialog.getText(self, "Mark by Search",
                                         "Mark every occurrence of (not case-sensitive):")
         if not ok or not term.strip():
             return
         hits = [(i, r) for i in range(t.pdoc.page_count) for r in t.pdoc.doc[i].search_for(term)]
         if not hits:
-            QMessageBox.information(self, "Mark Text for Redaction", f"“{term}” was not found.")
+            QMessageBox.information(self, "Mark by Search", f"“{term}” was not found.")
             return
         t.pdoc.checkpoint()
         pages = set()
@@ -1352,7 +1375,7 @@ class MainWindow(QMainWindow):
         n = t.pdoc.redaction_count()
         if not n:
             QMessageBox.information(self, "Save Redacted Copy", "Nothing is marked for redaction yet. "
-                                    "Select the text to redact, draw a box around an area, or use Mark Text.")
+                                    "Select the text to redact, draw a box around an area, or use Mark by Search.")
             return
         r = QMessageBox.question(self, "Save Redacted Copy",
                                  f"Save a copy with the content under {n} marked area(s) removed for good? "
@@ -1363,7 +1386,7 @@ class MainWindow(QMainWindow):
 
     def redacted_copy(self, t):
         """Open a copy of tab t with its marked content removed, in a new tab beside it."""
-        tab = self.add_doc(t.pdoc.redacted_copy(), self.tabs.indexOf(t) + 1)
+        tab = self.add_doc(t.pdoc.redacted_copy(self.redact_style), self.tabs.indexOf(t) + 1)
         self.set_mode("select")
         return tab
 

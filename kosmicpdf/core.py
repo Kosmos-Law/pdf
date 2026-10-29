@@ -27,13 +27,14 @@ UNDO_LIMIT = 20
 SCAN_IMAGE_SHARE = 0.25   # images covering this much of a page, with no text, look like a scan
 
 
-REDACT_MARK = (0.18, 0.2, 0.25)   # slate
+REDACT_MARK = (0.66, 0.29, 0.36)   # mauve, as the bar shown while redacting
+REDACT_STYLES = ("black", "white")  # how redacted areas look: black boxes, or white boxes with a black border
 
 
 def mark_redaction(page, rect):
     """Mark rect on page for redaction. Once redactions are applied, the content under
-    it is removed and a black box left in its place. Until then the mark is drawn
-    lightly: a faint slate outline, without the red box and cross MuPDF draws by default
+    it is removed and a box left in its place (see PdfDocument.redacted_copy). Until then
+    the mark is drawn lightly: a faint mauve outline, without the red box and cross MuPDF draws by default
     (Kosmic PDF lays a see-through wash over it as well; see PageView.paint_overlays)."""
     a = page.add_redact_annot(fitz.Rect(rect), fill=(0, 0, 0))
     a.set_colors(stroke=REDACT_MARK)
@@ -300,15 +301,21 @@ class PdfDocument(QObject):
     def redaction_count(self):
         return sum(1 for page in self.doc for a in page.annots(types=[fitz.PDF_ANNOT_REDACT]))
 
-    def redacted_copy(self):
+    def redacted_copy(self, style="black"):
         """A new, unsaved document with everything marked for redaction removed, named
         "<title> - Redacted.pdf" for the same folder. This document is left as it is, so
         redacting never changes the original; and the copy has no undo history, so the
-        removed content can't be brought back into it."""
+        removed content can't be brought back into it. Each redacted area is left as a
+        black box, or with style "white", a white box with a thin black border."""
         doc = fitz.open("pdf", self.doc.tobytes())
         for page in doc:
-            if any(True for _ in page.annots(types=[fitz.PDF_ANNOT_REDACT])):
-                page.apply_redactions(images=fitz.PDF_REDACT_IMAGE_PIXELS)
+            areas = [fitz.Rect(a.rect) for a in page.annots(types=[fitz.PDF_ANNOT_REDACT])]
+            if not areas:
+                continue
+            page.apply_redactions(images=fitz.PDF_REDACT_IMAGE_PIXELS)
+            if style == "white":
+                for r in areas:
+                    page.draw_rect(r, color=(0, 0, 0), fill=(1, 1, 1), width=0.75)
         copy = PdfDocument(doc, title=f"{os.path.splitext(self.title)[0]} - Redacted.pdf")
         copy.folder = self.folder
         copy.set_modified(True)

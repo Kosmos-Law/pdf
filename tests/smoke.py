@@ -9,7 +9,7 @@ import pymupdf as fitz
 from PySide6.QtCore import QEvent, QPoint, QPointF, QSize, Qt, QTimer
 from PySide6.QtGui import QGuiApplication, QMouseEvent
 from PySide6.QtTest import QTest
-from PySide6.QtWidgets import QApplication, QFileDialog, QMessageBox, QToolButton
+from PySide6.QtWidgets import QApplication, QFileDialog, QMenu, QMessageBox, QToolButton
 
 if not os.environ.get("KOSMICPDF_TEST_INSTALLED"):   # set when testing an installed build (e.g. the Flatpak)
     sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -210,8 +210,16 @@ mouse(v.canvas, "release", r.bottomRight().toPoint() - QPoint(1, 4))
 check("redaction marked", t.pdoc.redaction_count() == 1)
 check("redaction bar counts the marks", w.redact_count.text().startswith("1 area marked"), w.redact_count.text())
 mark = next(t.pdoc.doc[0].annots(types=[fitz.PDF_ANNOT_REDACT]))
-check("a mark is drawn lightly: a faint slate outline, no red", mark.colors["stroke"] and max(mark.colors["stroke"]) < 0.3
-      and mark.opacity < 0.5, f"{mark.colors} {mark.opacity}")
+from kosmicpdf.core import REDACT_MARK  # noqa: E402
+check("a mark is drawn lightly: a faint mauve outline, no cross", mark.colors["stroke"]
+      and all(abs(a - b) < 0.01 for a, b in zip(mark.colors["stroke"], REDACT_MARK)) and mark.opacity < 0.5,
+      f"{mark.colors} {mark.opacity}")
+tools_menu = next(m for m in w.menuBar().findChildren(QMenu) if m.title() == "&Tools")
+check("the Tools menu keeps only Redact for redaction",
+      w.actions_by_name["mode_redact"] in tools_menu.actions()
+      and not {w.actions_by_name[n] for n in ("redact_search", "apply_redactions")} & set(tools_menu.actions())
+      and w.actions_by_name["redact_search"] in w.redact_bar.actions()
+      and w.actions_by_name["redact_search"].text() == "Mark by Search…")
 # Part of one line and on into the next, in one drag.
 words = t.pdoc.doc[0].get_text("words")
 end_of_line = next(k for k in range(len(words) - 1) if words[k][4] == "fox" and words[k + 1][4] == "jumps"
@@ -226,13 +234,26 @@ check("selecting text across a line break marks just those words, one mark per l
       len(marks) == 3 and t.pdoc.doc[0].get_textbox(marks[-1]).strip() == "jumps"
       and t.pdoc.doc[0].get_textbox(marks[-2]).strip() == "fox", str([t.pdoc.doc[0].get_textbox(m) for m in marks]))
 w.actions_by_name["redact_area"].trigger(); pump()
-check("Area switches to drawing a box", w.redact_by == "area" and v.redact_by == "area" and "box" in w.redact_hint.text())
+check("Area switches to drawing a box", w.redact_by == "area" and v.redact_by == "area")
 head = text_pos(v, 0, "sample")
 mouse(v.canvas, "press", head.topLeft().toPoint() - QPoint(4, 4))
 mouse(v.canvas, "move", head.bottomRight().toPoint() + QPoint(4, 4))
 mouse(v.canvas, "release", head.bottomRight().toPoint() + QPoint(4, 4))
 check("a box drawn in Area mode is marked", t.pdoc.redaction_count() == 4)
+pg0 = t.pdoc.doc[0]          # annotations stay valid only while their page does
+box = v.to_canvas(0, list(pg0.annots(types=[fitz.PDF_ANNOT_REDACT]))[-1].rect)
+mouse(v.canvas, "move", box.center().toPoint(), Qt.NoButton); pump()
+button = v.mark_button(box)
+check("hovering over a mark shows its × on the corner", v._hover_mark is not None and button.center() == box.topRight())
+mouse(v.canvas, "move", button.center().toPoint(), Qt.NoButton)
+mouse(v.canvas, "press", button.center().toPoint()); mouse(v.canvas, "release", button.center().toPoint()); pump()
+check("clicking the × removes just that mark", t.pdoc.redaction_count() == 3 and v._hover_mark is None)
+t.pdoc.undo(); pump()
+check("undo brings the mark back", t.pdoc.redaction_count() == 4)
 w.redact_bar.grab().save(os.path.join(OUT, "02b-redact-bar.png"))
+w.set_redact_style("white")
+check("the redaction style is remembered", dialogs.settings().value("redact/style") == "white"
+      and w.redact_style_button.text() == "White Boxes")
 asked = []
 QFileDialog.getSaveFileName = staticmethod(lambda parent, title, start, *a: (asked.append(start) or start, ""))
 original_text, n_tabs = t.pdoc.doc[0].get_text(), w.tabs.count()
@@ -246,7 +267,10 @@ saved = fitz.open(want_path)
 check("the copy has the marked content removed, and no marks left",
       saved[0].get_text().count("12345") == original_text.count("12345") - 1
       and not any(True for p in saved for _ in p.annots(types=[fitz.PDF_ANNOT_REDACT])))
+boxes = [d for d in saved[0].get_drawings() if d.get("fill") == (1.0, 1.0, 1.0) and d.get("color") == (0.0, 0.0, 0.0)]
+check("white style: each redacted area is a white box with a black border", len(boxes) == 4, str(len(boxes)))
 saved.close()
+w.set_redact_style("black")
 check("the original is untouched: the same text, its marks still there",
       t.pdoc.doc[0].get_text() == original_text and t.pdoc.redaction_count() == 4)
 check("the copy has no undo history to bring the text back", not ct.pdoc.can_undo())
