@@ -1,16 +1,17 @@
-"""Dialogs: Bates numbering, combine files, OCR, PDF/A."""
+"""Dialogs: Bates numbering (one document, or several files), combine files, OCR, PDF/A."""
 import os
 import shutil
 import subprocess
 
 import pymupdf as fitz
-from PySide6.QtCore import QSettings, Qt
+from PySide6.QtCore import QSettings, Qt, Signal
+from PySide6.QtGui import QPalette
 from PySide6.QtWidgets import (QAbstractItemView, QCheckBox, QComboBox, QDialog, QDialogButtonBox,
                                QDoubleSpinBox, QFileDialog, QFormLayout, QGroupBox, QHBoxLayout,
-                               QLabel, QLineEdit, QListWidget, QPushButton, QRadioButton, QSpinBox,
-                               QVBoxLayout)
+                               QLabel, QLineEdit, QListWidget, QListWidgetItem, QMessageBox, QPushButton,
+                               QRadioButton, QSpinBox, QVBoxLayout, QWidget)
 
-from .core import PAGE_SIZES
+from .core import PAGE_SIZES, is_image, load_any
 
 POSITIONS = ["Bottom right", "Bottom center", "Bottom left", "Top right", "Top center", "Top left"]
 
@@ -38,11 +39,13 @@ def stamp_bates(doc, start, prefix, digits, suffix, position, font_size, margin,
     return n
 
 
-class BatesDialog(QDialog):
-    def __init__(self, parent, page_count, open_doc_count):
-        super().__init__(parent)
-        self.setWindowTitle("Bates Numbering")
-        self.page_count = page_count
+class BatesFields(QWidget):
+    """The Bates settings (prefix, start, digits, …), shared by the two Bates dialogs and
+    remembered between uses."""
+    changed = Signal()
+
+    def __init__(self):
+        super().__init__()
         s = settings()
         self.prefix = QLineEdit(s.value("bates/prefix", ""))
         self.start = QSpinBox(maximum=999_999_999, value=int(s.value("bates/next", 1)))
@@ -55,41 +58,19 @@ class BatesDialog(QDialog):
         self.margin = QDoubleSpinBox(minimum=0, maximum=144, value=float(s.value("bates/margin", 24)), suffix=" pt")
         self.background = QCheckBox("White box behind the number")
         self.background.setChecked(s.value("bates/background", "false") == "true")
-        self.all_docs = QCheckBox(f"Number all {open_doc_count} open files in this window, in tab order")
-        self.all_docs.setVisible(open_doc_count > 1)
-        self.preview = QLabel()
-
-        form = QFormLayout()
-        form.addRow("Prefix", self.prefix)
-        form.addRow("Start at", self.start)
-        form.addRow("Digits", self.digits)
-        form.addRow("Suffix", self.suffix)
-        form.addRow("Position", self.position)
-        form.addRow("Font size", self.font_size)
-        form.addRow("Margin", self.margin)
-        form.addRow("", self.background)
-        form.addRow("", self.all_docs)
-        form.addRow("Preview", self.preview)
-        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
-        buttons.accepted.connect(self.accept)
-        buttons.rejected.connect(self.reject)
-        lay = QVBoxLayout(self)
-        lay.addLayout(form)
-        lay.addWidget(QLabel("Numbers are stamped into the page content, so they print and cannot be moved.\n"
-                             "Undo is available until you close the file."))
-        lay.addWidget(buttons)
+        self.form = QFormLayout(self)
+        self.form.setContentsMargins(0, 0, 0, 0)
+        for label, w in (("Prefix", self.prefix), ("Start at", self.start), ("Digits", self.digits),
+                         ("Suffix", self.suffix), ("Position", self.position), ("Font size", self.font_size),
+                         ("Margin", self.margin), ("", self.background)):
+            self.form.addRow(label, w)
         for w in (self.prefix, self.suffix):
-            w.textChanged.connect(self._update)
+            w.textChanged.connect(self.changed)
         for w in (self.start, self.digits):
-            w.valueChanged.connect(self._update)
-        self._update()
+            w.valueChanged.connect(self.changed)
 
     def fmt(self, n):
         return f"{self.prefix.text()}{n:0{self.digits.value()}d}{self.suffix.text()}"
-
-    def _update(self):
-        a = self.start.value()
-        self.preview.setText(f"{self.fmt(a)}  …  {self.fmt(a + self.page_count - 1)} (this file)")
 
     def values(self):
         return dict(prefix=self.prefix.text(), digits=self.digits.value(), suffix=self.suffix.text(),
@@ -109,6 +90,111 @@ class BatesDialog(QDialog):
         s.setValue("bates/next", next_number)
 
 
+class BatesDialog(QDialog):
+    """Bates numbers for the open document (or every open document in the window)."""
+
+    def __init__(self, parent, page_count, open_doc_count):
+        super().__init__(parent)
+        self.setWindowTitle("Bates Numbering")
+        self.page_count = page_count
+        self.fields = BatesFields()
+        self.start, self.fmt, self.values, self.remember = (self.fields.start, self.fields.fmt, self.fields.values,
+                                                             self.fields.remember)
+        self.all_docs = QCheckBox(f"Number all {open_doc_count} open files in this window, in tab order")
+        self.all_docs.setVisible(open_doc_count > 1)
+        self.preview = QLabel()
+        self.fields.form.addRow("", self.all_docs)
+        self.fields.form.addRow("Preview", self.preview)
+        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        lay = QVBoxLayout(self)
+        lay.addWidget(self.fields)
+        lay.addWidget(QLabel("Numbers are stamped into the page content, so they print and cannot be moved.\n"
+                             "Undo is available until you close the file."))
+        lay.addWidget(buttons)
+        self.fields.changed.connect(self._update)
+        self._update()
+
+    def _update(self):
+        a = self.start.value()
+        self.preview.setText(f"{self.fmt(a)}  …  {self.fmt(a + self.page_count - 1)} (this file)")
+
+
+class FileList(QWidget):
+    """Files to put in order: drag them, or Move Up / Move Down; Add, Remove, Sort by Name.
+    Each row shows label(path), the file's name unless a dialog says otherwise."""
+    changed = Signal()
+
+    def __init__(self, file_filter, label=os.path.basename):
+        super().__init__()
+        self.file_filter, self.label = file_filter, label
+        self.list = QListWidget()
+        self.list.setDragDropMode(QAbstractItemView.InternalMove)
+        self.list.setSelectionMode(QAbstractItemView.ExtendedSelection)
+        self.list.model().rowsMoved.connect(self.changed)
+        side = QVBoxLayout()
+        for text, slot in (("Add Files…", self.add_files), ("Remove", self._remove),
+                           ("Move Up", lambda: self._move(-1)), ("Move Down", lambda: self._move(1)),
+                           ("Sort by Name", self._sort)):
+            side.addWidget(QPushButton(text, clicked=slot))
+        side.addStretch()
+        row = QHBoxLayout(self)
+        row.setContentsMargins(0, 0, 0, 0)
+        row.addWidget(self.list, 1)
+        row.addLayout(side)
+        self.changed.connect(self.relabel)
+
+    def add(self, paths):
+        for f in paths:
+            it = QListWidgetItem()
+            it.setData(Qt.UserRole, f)
+            it.setToolTip(f)
+            self.list.addItem(it)
+        if paths:
+            self.changed.emit()
+
+    def add_files(self):
+        files, _ = QFileDialog.getOpenFileNames(self, "Add files", settings().value("last_dir", os.path.expanduser("~")),
+                                                self.file_filter)
+        if files:
+            settings().setValue("last_dir", os.path.dirname(files[0]))
+        self.add(files)
+
+    def files(self):
+        return [self.list.item(i).data(Qt.UserRole) for i in range(self.list.count())]
+
+    def relabel(self):
+        for i in range(self.list.count()):
+            it = self.list.item(i)
+            it.setText(self.label(it.data(Qt.UserRole)))
+
+    def _remove(self):
+        for it in self.list.selectedItems():
+            self.list.takeItem(self.list.row(it))
+        self.changed.emit()
+
+    def _sort(self):
+        items = sorted((self.list.takeItem(0) for _ in range(self.list.count())),
+                       key=lambda it: os.path.basename(it.data(Qt.UserRole)).lower())
+        for it in items:
+            self.list.addItem(it)
+        self.changed.emit()
+
+    def _move(self, step):
+        rows = sorted((self.list.row(i) for i in self.list.selectedItems()), reverse=step > 0)
+        for r in rows:
+            nr = r + step
+            if 0 <= nr < self.list.count():
+                it = self.list.takeItem(r)
+                self.list.insertItem(nr, it)
+                it.setSelected(True)
+        self.changed.emit()
+
+
+PDFS_AND_IMAGES = "PDFs and images (*.pdf *.png *.jpg *.jpeg *.tif *.tiff *.bmp *.gif *.webp);;All files (*)"
+
+
 class CombineDialog(QDialog):
     """Pick and order PDFs and images to combine into one new PDF."""
 
@@ -117,23 +203,9 @@ class CombineDialog(QDialog):
         self.setWindowTitle("Images to PDF" if images_only else "Combine Files")
         self.images_only = images_only
         self.resize(560, 420)
-        self.list = QListWidget()
-        self.list.setDragDropMode(QAbstractItemView.InternalMove)
-        self.list.setSelectionMode(QAbstractItemView.ExtendedSelection)
-        for f in files:
-            self.list.addItem(f)
-        add = QPushButton("Add files…", clicked=self.add_files)
-        remove = QPushButton("Remove", clicked=lambda: [self.list.takeItem(self.list.row(i)) for i in self.list.selectedItems()])
-        up = QPushButton("Move up", clicked=lambda: self._move(-1))
-        down = QPushButton("Move down", clicked=lambda: self._move(1))
-        sort = QPushButton("Sort by name", clicked=lambda: self.list.sortItems())
-        side = QVBoxLayout()
-        for b in (add, remove, up, down, sort):
-            side.addWidget(b)
-        side.addStretch()
-        row = QHBoxLayout()
-        row.addWidget(self.list, 1)
-        row.addLayout(side)
+        self.list = FileList("Images (*.png *.jpg *.jpeg *.tif *.tiff *.bmp *.gif *.webp)" if images_only
+                             else PDFS_AND_IMAGES, label=lambda f: f)
+        self.list.add(list(files))
         self.page_size = QComboBox()
         self.page_size.addItems(list(PAGE_SIZES) + ["Image"])
         self.page_size.setItemText(len(PAGE_SIZES), "Image's own size")
@@ -148,37 +220,187 @@ class CombineDialog(QDialog):
         buttons.rejected.connect(self.reject)
         lay = QVBoxLayout(self)
         lay.addWidget(QLabel("Drag to reorder. The files are combined top to bottom into a new, unsaved PDF."))
-        lay.addLayout(row)
+        lay.addWidget(self.list, 1)
         lay.addLayout(size_row)
         lay.addWidget(buttons)
         if not files:
-            self.add_files()
-
-    def add_files(self):
-        filt = ("Images (*.png *.jpg *.jpeg *.tif *.tiff *.bmp *.gif *.webp)" if self.images_only else
-                "PDFs and images (*.pdf *.png *.jpg *.jpeg *.tif *.tiff *.bmp *.gif *.webp);;All files (*)")
-        files, _ = QFileDialog.getOpenFileNames(self, "Add files", settings().value("last_dir", os.path.expanduser("~")), filt)
-        for f in files:
-            self.list.addItem(f)
-        if files:
-            settings().setValue("last_dir", os.path.dirname(files[0]))
-
-    def _move(self, step):
-        rows = sorted((self.list.row(i) for i in self.list.selectedItems()), reverse=step > 0)
-        for r in rows:
-            nr = r + step
-            if 0 <= nr < self.list.count():
-                it = self.list.takeItem(r)
-                self.list.insertItem(nr, it)
-                it.setSelected(True)
+            self.list.add_files()
 
     def files(self):
-        return [self.list.item(i).text() for i in range(self.list.count())]
+        return self.list.files()
 
     def size_choice(self):
         settings().setValue("images/page_size", self.page_size.currentText())
         idx = self.page_size.currentIndex()
         return list(PAGE_SIZES)[idx] if idx < len(PAGE_SIZES) else "Image"
+
+
+# --- Bates numbering several files -------------------------------------------------------------------
+NAMINGS = {      # how numbered copies are named: (menu text, name for a file and its first Bates number)
+    "keep": ("Keep each file's name", lambda stem, first: stem),
+    "number": ("Name each file by its first Bates number", lambda stem, first: first),
+    "both": ("First Bates number, then the file's name", lambda stem, first: f"{first} - {stem}"),
+}
+
+
+def page_count(path):
+    """Pages in a PDF (1 for an image), or None if the file can't be read."""
+    try:
+        if is_image(path):
+            return 1
+        with fitz.open(path) as doc:
+            return None if doc.needs_pass else doc.page_count
+    except Exception:
+        return None
+
+
+def bates_name(path, first_label, naming):
+    stem = os.path.splitext(os.path.basename(path))[0]
+    return NAMINGS[naming][1](stem, first_label) + ".pdf"
+
+
+def number_files(files, folder, naming, start, fields):
+    """Bates number copies of files, in order, into folder: each continues the numbering
+    from the one before. The originals aren't changed. `fields` gives the Bates
+    settings (BatesFields.values() and .fmt). Returns [(new path, first, last)] and the
+    next number."""
+    os.makedirs(folder, exist_ok=True)
+    done, n = [], start
+    for f in files:
+        doc = load_any(f, "Letter")
+        first = n
+        n = stamp_bates(doc, n, **fields.values())
+        dst = os.path.join(folder, bates_name(f, fields.fmt(first), naming))
+        tmp = dst + ".kosmicpdf-tmp"
+        doc.save(tmp, garbage=3, deflate=True)
+        os.replace(tmp, dst)
+        doc.close()
+        done.append((dst, first, n - 1))
+    return done, n
+
+
+class BatesFilesDialog(QDialog):
+    """Bates number a set of files, in an order the user sets, into numbered copies,
+    optionally named by their first Bates number."""
+
+    def __init__(self, parent, files=()):
+        super().__init__(parent)
+        self.setWindowTitle("Bates Number Files")
+        self.resize(760, 640)
+        self._pages = {}
+        self.list = FileList(PDFS_AND_IMAGES, label=self._label)
+        self.fields = BatesFields()
+        self.naming = QComboBox()
+        for key, (text, _) in NAMINGS.items():
+            self.naming.addItem(text, key)
+        self.naming.setCurrentIndex(max(0, self.naming.findData(settings().value("bates/naming", "keep"))))
+        self.folder = QLineEdit()
+        browse = QPushButton("Choose…", clicked=self._choose_folder)
+        folder_row = QHBoxLayout()
+        folder_row.addWidget(self.folder, 1)
+        folder_row.addWidget(browse)
+        self.example = QLabel()
+        self.example.setForegroundRole(QPalette.PlaceholderText)
+        self.fields.form.addRow("File names", self.naming)
+        self.fields.form.addRow("", self.example)
+        self.fields.form.addRow("Save copies in", folder_row)
+        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        buttons.button(QDialogButtonBox.Ok).setText("Number Files")
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        lay = QVBoxLayout(self)
+        lay.addWidget(QLabel("Drag to set the order: the numbering runs top to bottom, each file carrying on "
+                             "from the one before.\nNumbered copies are saved in the folder below; "
+                             "the original files aren't changed."))
+        lay.addWidget(self.list, 1)
+        lay.addWidget(self.fields)
+        lay.addWidget(buttons)
+        self.list.changed.connect(self._update)
+        self.fields.changed.connect(self.list.relabel)
+        self.fields.changed.connect(self._update)
+        self.naming.currentIndexChanged.connect(self._update)
+        self.list.add(list(files))
+        self._update()
+
+    def _pages_of(self, f):
+        if f not in self._pages:
+            self._pages[f] = page_count(f)
+        return self._pages[f]
+
+    def ranges(self):
+        """[(file, first, last)] in the list's order; first/last are None for a file that can't be read."""
+        out, n = [], self.fields.start.value()
+        for f in self.list.files():
+            pages = self._pages_of(f)
+            out.append((f, n, n + pages - 1) if pages else (f, None, None))
+            n += pages or 0
+        return out
+
+    def _label(self, f):
+        for path, a, b in self.ranges():
+            if path == f:
+                if a is None:
+                    return f"{os.path.basename(f)}    (can't be read, or needs a password)"
+                rng = self.fields.fmt(a) if a == b else f"{self.fields.fmt(a)} – {self.fields.fmt(b)}"
+                return f"{os.path.basename(f)}    {rng}"
+        return os.path.basename(f)
+
+    def _update(self):
+        files = self.list.files()
+        if files and not self.folder.text():
+            self.folder.setText(os.path.join(os.path.dirname(files[0]), "Bates Numbered"))
+        example = files[0] if files else "Contract.pdf"
+        self.example.setText("e.g. " + bates_name(example, self.fields.fmt(self.fields.start.value()), self.naming_key()))
+
+    def _choose_folder(self):
+        d = QFileDialog.getExistingDirectory(self, "Save the numbered copies in", self.folder.text()
+                                             or settings().value("last_dir", os.path.expanduser("~")))
+        if d:
+            self.folder.setText(d)
+
+    def naming_key(self):
+        return self.naming.currentData()
+
+    def targets(self):
+        folder = self.folder.text()
+        return [os.path.join(folder, bates_name(f, self.fields.fmt(a), self.naming_key()))
+                for f, a, _ in self.ranges()]
+
+    def problem(self):
+        """Why the files can't be numbered as set up, or None."""
+        files = self.list.files()
+        if not files:
+            return "Add the files to number first."
+        unreadable = [os.path.basename(f) for f, a, _ in self.ranges() if a is None]
+        if unreadable:
+            return ("These files can't be read, or need a password; remove them, or open and save them first:\n"
+                    + "\n".join(unreadable))
+        if not self.folder.text().strip():
+            return "Choose a folder for the numbered copies."
+        sources = {os.path.realpath(f) for f in files}
+        targets = [os.path.realpath(t) for t in self.targets()]
+        if sources & set(targets):
+            return ("That would save over an original file. Choose another folder, or name the copies by "
+                    "their Bates numbers.")
+        if len(set(targets)) < len(targets):
+            return "Two files would get the same name. Name the copies by their Bates numbers, or rename one."
+        return None
+
+    def accept(self):
+        problem = self.problem()
+        if problem:
+            QMessageBox.information(self, "Bates Number Files", problem)
+            return
+        existing = [t for t in self.targets() if os.path.exists(t)]
+        if existing:
+            names = "\n".join(os.path.basename(t) for t in existing[:8]) + ("\n…" if len(existing) > 8 else "")
+            r = QMessageBox.question(self, "Bates Number Files",
+                                     f"{len(existing)} of the numbered copies are already in that folder:\n\n{names}"
+                                     "\n\nReplace them?", QMessageBox.Yes | QMessageBox.Cancel)
+            if r != QMessageBox.Yes:
+                return
+        settings().setValue("bates/naming", self.naming_key())
+        super().accept()
 
 
 def tesseract_languages():

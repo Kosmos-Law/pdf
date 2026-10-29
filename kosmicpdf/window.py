@@ -3,9 +3,9 @@ import os
 import tempfile
 
 import pymupdf as fitz
-from PySide6.QtCore import QByteArray, QEvent, QMimeData, QPoint, QProcess, QSize, Qt, QTimer, qVersion
-from PySide6.QtGui import (QAction, QActionGroup, QCursor, QDrag, QGuiApplication, QIcon, QIntValidator, QPalette,
-                           QKeySequence, QMouseEvent)
+from PySide6.QtCore import QByteArray, QEvent, QMimeData, QPoint, QProcess, QSize, Qt, QTimer, QUrl, qVersion
+from PySide6.QtGui import (QAction, QActionGroup, QCursor, QDesktopServices, QDrag, QGuiApplication, QIcon,
+                           QIntValidator, QPalette, QKeySequence, QMouseEvent)
 from PySide6.QtWidgets import (QApplication, QComboBox, QDoubleSpinBox, QFileDialog,
                                QInputDialog, QLabel, QLineEdit, QMainWindow, QMenu, QMessageBox,
                                QProgressDialog, QSizePolicy, QSplitter, QTabBar, QTabWidget,
@@ -49,7 +49,7 @@ LUCIDE = {
     "rotate_left": "rotate-ccw", "rotate_right": "rotate-cw", "rotate_180": "refresh-ccw",
     "extract": "file-output", "insert_blank": "file-plus", "insert_file": "file-input",
     "zoom_in": "zoom-in", "zoom_out": "zoom-out", "fit_width": "move-horizontal", "fit_page": "maximize",
-    "thumbs": "panel-left", "bates": "hash", "ocr": "scan-text", "pdfa": "file-check", "flatten": "layers",
+    "thumbs": "panel-left", "bates": "hash", "bates_files": "files", "ocr": "scan-text", "pdfa": "file-check", "flatten": "layers",
     "redact_search": "text-search", "apply_redactions": "check-check", "redact_done": "x", "about": "info",
     "redact_text": "text-select", "redact_area": "square-dashed",
     "mode_select": "text-cursor", "mode_highlight": "highlighter", "mode_typewriter": "type", "mode_redact": "eye-off",
@@ -601,6 +601,8 @@ class MainWindow(QMainWindow):
         A("thumbs", "&Page Panel", lambda on: self.set_thumbs(on), "F4", tip="Show or hide the page panel (F4)",
           checkable=True).setChecked(dialogs.settings().value("view/thumbs", True, type=bool))
         A("bates", "&Bates Numbering…", self.bates)
+        A("bates_files", "Bates Number &Files…", self.bates_files,
+          tip="Bates number several files in an order you set, into numbered copies")
         A("ocr", "&OCR (Make Searchable)…", self.ocr).setIconText("OCR")
         A("pdfa", "Convert to &PDF/A…", self.pdfa)
         A("flatten", "&Flatten Annotations and Forms", self.flatten)
@@ -648,7 +650,7 @@ class MainWindow(QMainWindow):
         menu("&Pages", ["rotate_left", "rotate_right", "rotate_180", None, "cut_pages", "copy_pages", "paste_pages",
                         "delete_pages", None, "extract", "insert_blank", "insert_file", "select_all_pages"])
         menu("&Tools", ["mode_select", "mode_highlight", "mode_typewriter", "mode_redact", None,
-                        "bates", "ocr", "pdfa", "flatten"])
+                        "bates", "bates_files", "ocr", "pdfa", "flatten"])
         menu("&Help", ["about"])
 
     def build_toolbar(self):
@@ -824,7 +826,8 @@ class MainWindow(QMainWindow):
         self.tabs.setVisible(has)
         self.empty.setVisible(not has)
         for n, a in self.actions_by_name.items():
-            if n not in ("open", "new_window", "combine", "images", "quit", "about", "thumbs", "redact_done"):
+            if n not in ("open", "new_window", "combine", "images", "bates_files", "quit", "about", "thumbs",
+                         "redact_done"):
                 a.setEnabled(has)
         if has:
             pdoc = self.tab.pdoc
@@ -1305,6 +1308,42 @@ class MainWindow(QMainWindow):
             tab.pdoc.edited(range(tab.pdoc.page_count))
         dlg.remember(n)
         self.statusBar().showMessage(f"Bates numbered {dlg.fmt(first)} to {dlg.fmt(n - 1)}.", 8000)
+
+    def bates_files(self):
+        dlg = dialogs.BatesFilesDialog(self)
+        if not dlg.exec():
+            return
+        files = dlg.list.files()
+        progress = QProgressDialog("Bates numbering…", None, 0, len(files), self)
+        progress.setWindowTitle("Bates Number Files")
+        progress.setWindowModality(Qt.WindowModal)
+        progress.setMinimumDuration(400)
+        done, n = [], dlg.fields.start.value()
+        try:
+            for k, f in enumerate(files):
+                progress.setValue(k)
+                progress.setLabelText(f"Bates numbering {os.path.basename(f)}…")
+                QApplication.processEvents()
+                more, n = dialogs.number_files([f], dlg.folder.text(), dlg.naming_key(), n, dlg.fields)
+                done += more
+        except Exception as exc:
+            progress.reset()
+            QMessageBox.warning(self, "Bates Number Files",
+                                f"Stopped at {os.path.basename(files[len(done)])}:\n{exc}\n\n"
+                                f"{len(done)} file(s) were numbered before it.")
+            if not done:
+                return
+        progress.setValue(len(files))
+        dlg.fields.remember(n)
+        first, last = dlg.fields.fmt(done[0][1]), dlg.fields.fmt(done[-1][2])
+        box = QMessageBox(QMessageBox.Information, "Bates Number Files",
+                          f"Numbered {len(done)} file(s), {first} to {last}, into {dlg.folder.text()}.\n"
+                          "The original files are unchanged.", parent=self)
+        open_folder = box.addButton("Open Folder", QMessageBox.AcceptRole)
+        box.addButton(QMessageBox.Close)
+        box.exec()
+        if box.clickedButton() is open_folder:
+            QDesktopServices.openUrl(QUrl.fromLocalFile(dlg.folder.text()))
 
     def _need_ocrmypdf(self):
         if dialogs.ocrmypdf_available():

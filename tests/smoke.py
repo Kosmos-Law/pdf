@@ -855,6 +855,62 @@ check("F4 opens it again at its last width", t.thumbs.isVisible() and abs(t.spli
 check("the panel's state and width are remembered", dialogs.settings().value("view/thumbs", type=bool) is True
       and dialogs.settings().value("view/thumbs_width", type=int) == 240)
 
+# --- Bates numbering several files ---------------------------------------------------------------------------------
+src_a, src_b = os.path.join(work, "sample.pdf"), os.path.join(work, "second.pdf")
+pages_a, pages_b = fitz.open(src_a).page_count, fitz.open(src_b).page_count
+original_a = open(src_a, "rb").read()
+bf = dialogs.BatesFilesDialog(w)
+bf.fields.prefix.setText("KOS"); bf.fields.suffix.setText(""); bf.fields.start.setValue(1); bf.fields.digits.setValue(6)
+bf.list.add([src_a, src_b])
+rows = lambda: [bf.list.list.item(k).text() for k in range(bf.list.list.count())]  # noqa: E731
+check("each file shows the Bates range it will get",
+      f"KOS000001 – KOS{pages_a:06d}" in rows()[0] and f"KOS{pages_a + 1:06d} – KOS{pages_a + pages_b:06d}" in rows()[1],
+      str(rows()))
+bf.list.list.item(1).setSelected(True); bf.list._move(-1)
+check("moving a file up renumbers both", rows()[0].startswith("second.pdf") and f"KOS000001 – KOS{pages_b:06d}" in rows()[0]
+      and f"KOS{pages_b + 1:06d} – KOS{pages_a + pages_b:06d}" in rows()[1], str(rows()))
+check("the copies go to a Bates Numbered folder beside the first file by default",
+      bf.folder.text() == os.path.join(work, "Bates Numbered"))
+bf.naming.setCurrentIndex(bf.naming.findData("keep")); bf.folder.setText(work)
+check("it won't save over an original", "original" in (bf.problem() or ""))
+bf.naming.setCurrentIndex(bf.naming.findData("both")); bf.folder.setText(os.path.join(work, "Bates Numbered"))
+check("the naming example shows the first file's new name", bf.example.text() == "e.g. KOS000001 - second.pdf"
+      and bf.problem() is None, bf.example.text())
+done, nxt = dialogs.number_files(bf.list.files(), bf.folder.text(), "both", 1, bf.fields)
+check("numbered copies are named by their first Bates number, then their name",
+      [os.path.basename(d) for d, _, _ in done] == ["KOS000001 - second.pdf", f"KOS{pages_b + 1:06d} - sample.pdf"]
+      and nxt == pages_a + pages_b + 1, str(done))
+copy_a = fitz.open(done[1][0])
+check("the numbering carries on from one file to the next",
+      f"KOS{pages_b + 1:06d}" in copy_a[0].get_text() and f"KOS{pages_a + pages_b:06d}" in copy_a[pages_a - 1].get_text())
+copy_a.close()
+check("the original files are unchanged", open(src_a, "rb").read() == original_a)
+check("an image counts as one page, an unreadable file as none",
+      dialogs.page_count(os.path.join(work, "scan.png")) == 1 and dialogs.page_count(os.path.join(work, "nope.pdf")) is None)
+bf.deleteLater()
+# The whole command, as from the menu: its dialog filled in, and the closing message dismissed.
+real_exec, real_box_exec = dialogs.BatesFilesDialog.exec, QMessageBox.exec
+
+
+def fill_in(dlg):
+    dlg.list.add([src_b, src_a])
+    dlg.fields.prefix.setText("E2E"); dlg.fields.start.setValue(100)
+    dlg.naming.setCurrentIndex(dlg.naming.findData("number"))
+    dlg.folder.setText(os.path.join(work, "numbered"))
+    return True
+
+
+dialogs.BatesFilesDialog.exec = fill_in
+QMessageBox.exec = lambda self: 0
+try:
+    w.bates_files()
+finally:
+    dialogs.BatesFilesDialog.exec, QMessageBox.exec = real_exec, real_box_exec
+check("Bates Number Files numbers the files into copies named by Bates number, and remembers where it got to",
+      sorted(os.listdir(os.path.join(work, "numbered"))) == ["E2E000100.pdf", f"E2E{100 + pages_b:06d}.pdf"]
+      and int(dialogs.settings().value("bates/next")) == 100 + pages_a + pages_b,
+      str(os.listdir(os.path.join(work, "numbered"))))
+
 # --- dialogs use Lucide icons -----------------------------------------------------------------------------------
 from PySide6.QtWidgets import QStyle  # noqa: E402
 from kosmicpdf.theme import LucideStyle  # noqa: E402
