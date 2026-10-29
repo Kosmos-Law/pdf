@@ -226,7 +226,15 @@ from kosmicpdf.core import REDACT_MARK  # noqa: E402
 check("a mark is drawn lightly: a faint mauve outline, no cross", mark.colors["stroke"]
       and all(abs(a - b) < 0.01 for a, b in zip(mark.colors["stroke"], REDACT_MARK)) and mark.opacity < 0.5,
       f"{mark.colors} {mark.opacity}")
-tools_menu = next(m for m in w.menuBar().findChildren(QMenu) if m.title() == "&Tools")
+from PySide6.QtWidgets import QMenuBar  # noqa: E402
+check("the menus live behind a menu button at the right end of the toolbar, not in a menu bar",
+      not w.findChildren(QMenuBar) and w.toolbar.widgetForAction(w.toolbar.actions()[-1]) is w.menu_button
+      and w.menu_button.menu() is w.main_menu
+      and [m.text() for m in w.main_menu.actions()] == ["&File", "&Edit", "&View", "&Pages", "&Tools", "&Help"],
+      str([m.text() for m in w.main_menu.actions()]))
+check("every action stays with the window, so its shortcut works without a menu bar",
+      all(act in w.actions() for act in w.actions_by_name.values()))
+tools_menu = next(m for m in w.main_menu.findChildren(QMenu) if m.title() == "&Tools")
 check("the Tools menu keeps only Redact for redaction",
       w.actions_by_name["mode_redact"] in tools_menu.actions()
       and not {w.actions_by_name[n] for n in ("redact_search", "apply_redactions")} & set(tools_menu.actions())

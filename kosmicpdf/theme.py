@@ -290,6 +290,8 @@ QLineEdit[notFound="true"] {{ background:{c.redact_band.name()}; border-color:{c
 QToolBar#redactBar {{ background:{c.redact_band.name()}; border-bottom:1px solid {c.redact_line.name()}; padding:3px 6px; }}
 QToolButton[popupMode="1"] {{ padding-right:17px; }}
 QToolButton[popupMode="2"] {{ padding-right:18px; }}
+QToolButton#menuButton {{ padding-right:5px; }}
+QToolButton#menuButton::menu-indicator {{ image:none; width:0; }}
 QToolButton[popupMode="2"]::menu-indicator {{ subcontrol-position:center right; right:5px; width:9px; height:9px; }}
 QToolButton::menu-button {{ border:none; border-left:1px solid transparent; width:15px;
                            border-top-right-radius:5px; border-bottom-right-radius:5px; }}

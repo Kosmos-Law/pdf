@@ -38,6 +38,9 @@ From the Menu (Office), or:
 
     kosmicpdf [files...]
 
+The menus (File, Edit, View, Pages, Tools, Help) are behind the ☰ button at the
+right of the toolbar, or F10; every keyboard shortcut works without opening them.
+
 Only one copy runs at a time: opening another PDF (from the file manager, say)
 adds a tab to the running window, so tabs and pages can be dragged between all
 windows. Pass `--new-instance` to force a separate process. The icon is

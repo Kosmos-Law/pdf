@@ -621,6 +621,7 @@ class MainWindow(QMainWindow):
         self.redact_by = "text"
         self.actions_by_name["redact_text"].setChecked(True)
         A("about", "&About Kosmic PDF", self.about)
+        A("menu", "Menu", lambda: self.menu_button.showMenu(), "F10")
 
         self.mode_group = QActionGroup(self)
         for name, text, key, tip in (
@@ -634,8 +635,10 @@ class MainWindow(QMainWindow):
         self.actions_by_name["mode_select"].setChecked(True)
 
     def build_menus(self):
+        """The menus, gathered behind the menu button at the right of the toolbar (or F10)
+        rather than in a menu bar."""
         a = self.actions_by_name
-        mb = self.menuBar()
+        mb = self.main_menu = QMenu(self)
 
         def menu(title, names):
             m = mb.addMenu(title)
@@ -655,6 +658,9 @@ class MainWindow(QMainWindow):
         menu("&Tools", ["mode_select", "mode_highlight", "mode_typewriter", "mode_redact", None,
                         "bates", "bates_files", "ocr", "pdfa", "flatten"])
         menu("&Help", ["about"])
+        # Qt hears a menu item's shortcut only while its menu is in reach; with no menu bar,
+        # the window has to hold every action itself for Ctrl+S, F3 and the rest to work.
+        self.addActions(list(a.values()))
 
     def build_toolbar(self):
         a = self.actions_by_name
@@ -697,6 +703,15 @@ class MainWindow(QMainWindow):
         tb.addWidget(colors)
         tb.addAction(a["mode_typewriter"])
         tb.addWidget(self.font_size)
+        spacer = QWidget()
+        spacer.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        tb.addWidget(spacer)
+        button = self.menu_button = QToolButton()
+        button.setObjectName("menuButton")
+        button.setToolTip("Menu (F10)")
+        button.setMenu(self.main_menu)
+        button.setPopupMode(QToolButton.InstantPopup)
+        tb.addWidget(button)
         # Common commands are icons with tooltips; the tools keep a label so they are easy to find.
         labelled = {a[n] for n in ("mode_select", "mode_highlight", "mode_typewriter", "ocr")}
         tb.setToolButtonStyle(Qt.ToolButtonIconOnly)
@@ -830,7 +845,7 @@ class MainWindow(QMainWindow):
         self.empty.setVisible(not has)
         for n, a in self.actions_by_name.items():
             if n not in ("open", "new_window", "combine", "images", "bates_files", "quit", "about", "thumbs",
-                         "redact_done"):
+                         "redact_done", "menu"):
                 a.setEnabled(has)
         if has:
             pdoc = self.tab.pdoc
@@ -873,6 +888,7 @@ class MainWindow(QMainWindow):
             t.view.apply_colors(colors)
             t.thumbs.apply_colors(colors)
         if hasattr(self, "color_button"):
+            self.menu_button.setIcon(lucide("menu", colors.text))
             self.actions_by_name["mode_highlight"].setIcon(self.hl_icon())
             self.redact_icon.setPixmap(lucide(LUCIDE["mode_redact"], colors.text).pixmap(theme.TOOLBAR_ICON))
             self.findbar.apply_colors(colors)
