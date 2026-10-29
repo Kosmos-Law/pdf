@@ -6,7 +6,7 @@ Lucide (ISC licence, see icons/LICENSE-lucide), tinted to the theme's text colou
 """
 import os
 
-from PySide6.QtCore import QByteArray, QRectF, Qt
+from PySide6.QtCore import QByteArray, QPointF, QRectF, Qt
 from PySide6.QtGui import QColor, QIcon, QImage, QPainter, QPalette, QPen, QPixmap
 from PySide6.QtSvg import QSvgRenderer
 from PySide6.QtWidgets import QApplication
@@ -17,7 +17,7 @@ TOOLBAR_ICON = 16      # px, also the menus' icon size
 NOTE_MENU_ICON = 12    # px, the menu button on a typewriter note
 ICON_STROKE = 1.5      # Lucide line width in its 24-unit grid; its default of 2 looks heavy at this size
 ICON_OPACITY = 1.0
-ATTENTION = "#e2b461"  # Kosmos amber: a button that has something to offer, such as OCR for a scan
+BADGE = "#c62828"      # the red dot on a button that has something waiting: Save, or OCR for a scan
 REDACT = "#c0392b"     # a muted red, tinting the bar shown while redacting
 
 
@@ -83,7 +83,6 @@ class Colors:
         self.line = win.lighter(150) if self.dark else win.darker(115)       # hairline borders
         self.field = win.darker(125) if self.dark else win.lighter(104)      # text boxes, menus
         self.shadow = 46 if self.dark else 24      # alpha of the innermost shadow ring
-        self.attention = QColor(ATTENTION)
         self.redact_band = mix(win, QColor(REDACT), 0.16 if self.dark else 0.09)   # the bar shown while redacting
         self.redact_line = mix(win, QColor(REDACT), 0.45 if self.dark else 0.35)
 
@@ -107,8 +106,10 @@ def icon_sizes():
     return sorted({round(n * r) for n in (NOTE_MENU_ICON, TOOLBAR_ICON) for r in ratios})
 
 
-def lucide(name, color):
-    """A crisp QIcon from a bundled Lucide SVG in the given colour."""
+def lucide(name, color, dot=False, stripe=None):
+    """A crisp QIcon from a bundled Lucide SVG in the given colour, optionally with a
+    red dot in its bottom right corner (see BADGE), or drawn a little smaller above a
+    stripe of colour (an RGB tuple), like the highlighter in a word processor."""
     path = os.path.join(ICON_DIR, f"{name}.svg")
     if not os.path.exists(path):
         return QIcon()
@@ -125,10 +126,41 @@ def lucide(name, color):
             img.fill(Qt.transparent)
             p = QPainter(img)
             p.setRenderHint(QPainter.Antialiasing)
-            renderer.render(p, QRectF(0, 0, size, size))
+            if stripe:
+                # Only the drawing's own extent (Lucide leaves a margin), so it stays a good size above the stripe.
+                renderer.setViewBox(QRectF(2, 3, 21, 18))
+                h = size * 0.74
+                renderer.render(p, QRectF((size - h * 21 / 18) / 2, 0, h * 21 / 18, h))
+                draw_stripe(p, size, stripe, opacity)
+            else:
+                renderer.render(p, QRectF(0, 0, size, size))
+            if dot:
+                draw_dot(p, size)
             p.end()
             icon.addPixmap(QPixmap.fromImage(img), mode)
     return icon
+
+
+def draw_stripe(p, size, rgb, opacity):
+    fill = QColor.fromRgbF(*rgb)
+    p.setOpacity(opacity)
+    p.setPen(QPen(fill.darker(165), max(1.0, size / 22)))
+    p.setBrush(fill)
+    p.drawRoundedRect(QRectF(size * 0.06, size * 0.8, size * 0.88, size * 0.17), size * 0.05, size * 0.05)
+    p.setOpacity(1)
+
+
+def draw_dot(p, size):
+    """The badge dot, with a thin clear ring cut out of the icon around it so it stands
+    apart from the strokes beneath on any background."""
+    d = size * 0.42
+    centre = QPointF(size - d / 2, size - d / 2)
+    p.setPen(Qt.NoPen)
+    p.setCompositionMode(QPainter.CompositionMode_Clear)
+    p.drawEllipse(centre, d / 2 + size * 0.09, d / 2 + size * 0.09)
+    p.setCompositionMode(QPainter.CompositionMode_SourceOver)
+    p.setBrush(QColor(BADGE))
+    p.drawEllipse(centre, d / 2, d / 2)
 
 
 def draw_page_shadow(p, rect, colors):
@@ -191,9 +223,14 @@ QToolButton {{ border:1px solid transparent; border-radius:5px; padding:5px; }}
 QToolButton:hover {{ background:{hover}; }}
 QToolButton:pressed {{ background:{press}; }}
 QToolButton:checked {{ background:{c.rgba(c.accent, 55)}; border-color:{c.rgba(c.accent, 130)}; }}
-QToolButton[attention="true"] {{ background:{c.rgba(c.attention, 80)}; border-color:{c.rgba(c.attention, 210)}; }}
-QToolButton[attention="true"]:hover {{ background:{c.rgba(c.attention, 125)}; }}
+QToolBar#findBar {{ padding:3px 6px; }}
+QLineEdit[notFound="true"] {{ background:{c.redact_band.name()}; border-color:{c.redact_line.name()}; }}
 QToolBar#redactBar {{ background:{c.redact_band.name()}; border-bottom:1px solid {c.redact_line.name()}; padding:3px 6px; }}
+QToolButton[popupMode="1"] {{ padding-right:17px; }}
+QToolButton::menu-button {{ border:none; border-left:1px solid transparent; width:15px;
+                           border-top-right-radius:5px; border-bottom-right-radius:5px; }}
+QToolButton::menu-button:hover {{ background:{hover}; border-left-color:{c.line.name()}; }}
+QToolButton::menu-arrow {{ image:url({down}); width:9px; height:9px; }}
 QToolButton::menu-indicator {{ image:url({down}); width:8px; height:8px;
                               subcontrol-origin:padding; subcontrol-position:bottom right; }}
 

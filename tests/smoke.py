@@ -194,6 +194,7 @@ on_toolbar = {b.defaultAction() for b in w.toolbar.findChildren(QToolButton)}
 check("redaction tools are off the main toolbar",
       not on_toolbar & {w.actions_by_name[n] for n in ("mode_redact", "apply_redactions", "redact_search")})
 check("redaction bar hidden until redacting", w.redact_bar.isHidden())
+check("OCR sits just right of Save", w.toolbar.actions()[:3] == [w.actions_by_name[n] for n in ("open", "save", "ocr")])
 v.canvas.setFocus(); pump()
 QTest.keyClick(w, Qt.Key_R)
 pump()
@@ -234,7 +235,10 @@ check("flatten removes annotations", sum(len(list(p.annots())) for p in t.pdoc.d
 
 # --- save and reopen ---------------------------------------------------------------------------------------
 out_path = os.path.join(work, "saved.pdf")
+w.tabs.setCurrentWidget(t); pump()
+had_dot = w._badges["save"]
 w._write(t, out_path)
+check("saving clears the dot on Save", had_dot and not w._badges["save"])
 d = fitz.open(out_path)
 check("saved file reopens", d.page_count == 6 and "CRAIG000006" in d[5].get_text() and "12345" not in d[0].get_text().split("Confidential account")[1][:8])
 d.close()
@@ -251,14 +255,15 @@ img_doc = PdfDocument(load_any(os.path.join(work, "scan.png"), "Letter"), title=
 it = w.add_doc(img_doc)
 check("image has no text before OCR", not img_doc.doc[0].get_text().strip())
 pump(10)
-check("OCR button lights up for a scan", img_doc.needs_ocr() and w.ocr_button.property("attention") is True
+check("OCR button gets a dot for a scan", img_doc.needs_ocr() and w._badges["ocr"]
       and w.ocr_button.toolButtonStyle() == Qt.ToolButtonTextBesideIcon)
 job = window.ExternalJob(w, it, ["-l", "eng", "--skip-text", "--output-type", "pdf"], "OCR")
 while job.proc.state() != job.proc.ProcessState.NotRunning:
     job.proc.waitForFinished(100); pump(5)
 pump(20)
 check("OCR adds searchable text", "quick brown fox" in img_doc.doc[0].get_text(), img_doc.doc[0].get_text()[:60])
-check("OCR button settles once the text is there", not img_doc.needs_ocr() and w.ocr_button.property("attention") is False)
+check("OCR dot goes once the text is there", not img_doc.needs_ocr() and not w._badges["ocr"])
+check("Save has a dot while there are unsaved changes", img_doc.modified and w._badges["save"])
 
 # --- PDF/A ----------------------------------------------------------------------------------------------------
 job = window.ExternalJob(w, it, ["--skip-text", "--tesseract-timeout", "0", "--output-type", "pdfa-2"], "PDF/A")
@@ -418,6 +423,26 @@ drag(r.topLeft().toPoint() + QPoint(1, 4), r.bottomRight().toPoint() - QPoint(1,
 check("highlight in firm green", [c for _, c in highlights(3)] == [rnd(HIGHLIGHT_COLORS["Green"])])
 
 w.set_mode("select")
+green, purple = rnd(HIGHLIGHT_COLORS["Green"]), rnd(HIGHLIGHT_COLORS["Purple"])
+lazy, jumps = text_pos(v, 3, "lazy"), text_pos(v, 3, "jumps")
+drag(lazy.topLeft().toPoint() + QPoint(1, 4), lazy.bottomRight().toPoint() - QPoint(1, 4))
+w.actions_by_name["mode_highlight"].trigger(); pump()
+check("Highlight button highlights the selected text and stays in Select",
+      [c for _, c in highlights(3)] == [green, green] and w.mode == "select"
+      and w.actions_by_name["mode_select"].isChecked(), str(highlights(3)))
+drag(jumps.topLeft().toPoint() + QPoint(1, 4), jumps.bottomRight().toPoint() - QPoint(1, 4))
+w.set_hl_color(HIGHLIGHT_COLORS["Purple"]); pump()
+check("choosing a colour highlights the selected text in it", sorted(c for _, c in highlights(3)) == sorted([green, green, purple])
+      and w.mode == "select")
+drag(jumps.topLeft().toPoint() + QPoint(1, 4), lazy.bottomRight().toPoint() - QPoint(1, 4))
+w.set_hl_color(None); pump()
+check("Clear removes the highlights under the selected text", [c for _, c in highlights(3)] == [green])
+w.set_hl_color(HIGHLIGHT_COLORS["Green"])
+check("the button shows the colour under the highlighter, with an arrow for the colours",
+      w.color_button.defaultAction() is w.actions_by_name["mode_highlight"]
+      and w.color_button.popupMode() == QToolButton.MenuButtonPopup)
+
+w.set_mode("select")
 drag(r.topLeft().toPoint() + QPoint(2, 4), text_pos(v, 3, "12345").bottomRight().toPoint() - QPoint(1, 4))
 check("dragging over a highlight still selects text", "onfidential account 12345" in v.selected_text() and v.sel_annot is None,
       repr(v.selected_text()))
@@ -489,6 +514,7 @@ pg5 = t.pdoc.doc[5]
 nt = [fitz.Rect(a.rect) for a in pg5.annots() if a.type[0] == fitz.PDF_ANNOT_FREE_TEXT]
 want = fitz.Point(100 + 60, 120 + 40) / v.zoom
 check("note is saved where the handle left it", nt and abs(nt[0].x0 - want.x) < 1 and abs(nt[0].y0 - want.y) < 1, f"{nt} want {want}")
+del t.pdoc._undo[:-5]       # leave room under the undo cap (20 steps) so one more step can be counted
 depth = len(t.pdoc._undo)
 mouse(v.canvas, "press", v.to_canvas(5, nt[0]).center().toPoint()); pump()
 hd = v.editor.handle
@@ -558,6 +584,7 @@ existing = [a for a in t.pdoc.doc[5].annots() if a.type[0] == fitz.PDF_ANNOT_FRE
 pg5 = t.pdoc.doc[5]
 er = fitz.Rect([a.rect for a in pg5.annots() if a.info.get("content") == "Nudge me"][0])
 mouse(v.canvas, "press", v.to_canvas(5, er).center().toPoint()); pump()
+del t.pdoc._undo[:-5]
 depth = len(t.pdoc._undo)
 click_menu_item(v.editor.remove_button, "Delete note")
 check("Delete removes an existing note", "Nudge me" not in [c for c, _ in notes_on(5)] and len(t.pdoc._undo) == depth + 1)
@@ -640,6 +667,76 @@ mixed.insert_doc(scan, 3)
 check("one scanned page among text pages is found", mixed.needs_ocr() is True)
 check("a time budget lets a long check carry on later", mixed.needs_ocr(budget=-1) in (None, True)
       and mixed.needs_ocr() is True)
+
+# --- find bar --------------------------------------------------------------------------------------------------
+import re  # noqa: E402
+import time  # noqa: E402
+from kosmicpdf.pageview import find_in_chars, search_pattern  # noqa: E402
+
+
+def settle(ms=400):
+    end = time.monotonic() + ms / 1000
+    while time.monotonic() < end:
+        pump(5); time.sleep(0.01)
+
+
+ft = w.add_doc(PdfDocument(fitz.open(os.path.join(SAMPLES, "sample.pdf")), title="find.pdf"))
+fb = w.findbar
+settle(100)
+ft.view.go_to_page(2); settle(100)
+w.activateWindow(); settle(100)
+QTest.keyClick(w, Qt.Key_F, Qt.ControlModifier)
+pump()
+check("Ctrl+F opens the find bar under the toolbar", fb.isVisible() and w.toolBarArea(fb) == Qt.TopToolBarArea
+      and fb.y() > w.toolbar.y()
+      and fb.edit.hasFocus())
+texts = [p.get_text() for p in ft.pdoc.doc]
+want = sum(len(re.findall(r"fox\s+jumps", tx)) for tx in texts)
+QTest.keyClicks(fb.edit, "fox jumps")
+settle()
+check("typing finds every match, including ones wrapped onto the next line",
+      len(ft.view.find_hits) == want and want > ft.pdoc.page_count, f"{len(ft.view.find_hits)} of {want}")
+check("the first match shown is on the page in view", ft.view.find_hits[ft.view.find_index][0] == 2
+      and fb.label.text() == f"{ft.view.find_index + 1} of {want}", fb.label.text())
+wrapped = [h for h in ft.view.find_hits if len(h[1]) == 2]
+check("a wrapped match is marked on both lines", bool(wrapped))
+first = ft.view.find_index
+QTest.keyClick(fb.edit, Qt.Key_Return)
+check("Enter goes to the next match", ft.view.find_index == first + 1)
+QTest.keyClick(fb.edit, Qt.Key_Return, Qt.ShiftModifier)
+check("Shift+Enter goes back", ft.view.find_index == first)
+w.actions_by_name["find_next"].trigger()
+check("F3 / Ctrl+G step on as well", ft.view.find_index == first + 1)
+fb.edit.setText("QUICK"); settle()
+n_any = len(ft.view.find_hits)
+fb.case.setChecked(True); settle()
+check("Match Case leaves out other capitals", n_any > 0 and not ft.view.find_hits
+      and fb.label.text() == "No matches" and fb.edit.property("notFound") is True, fb.label.text())
+fb.case.setChecked(False)
+fb.edit.setText("fox jump"); settle()
+part = len(ft.view.find_hits)
+fb.whole.setChecked(True); settle()
+check("Whole Words skips parts of words", part == want and not ft.view.find_hits)
+fb.whole.setChecked(False)
+chars = [(fitz.Rect(i * 5, 0, i * 5 + 5, 10), c, 1) for i, c in enumerate("Plaintiff’s ﬁling")]
+check("curly apostrophes and ligatures match plain typing",
+      len(find_in_chars(chars, search_pattern("plaintiff's filing"))) == 1)
+fb.edit.setText("lazy dog"); settle()
+ft.pdoc.delete_pages([0]); settle()
+check("matches are found again after pages change",
+      len(ft.view.find_hits) == sum(len(re.findall(r"lazy\s+dog", tx)) for tx in texts[1:]) > 0, str(len(ft.view.find_hits)))
+w.set_mode("redact"); pump()
+check("find and redaction bars can both be open, one under the other",
+      w.redact_bar.isVisible() and fb.isVisible() and fb.y() != w.redact_bar.y())
+w.set_mode("select")
+QTest.keyClick(fb.edit, Qt.Key_Escape)
+check("Esc closes the bar and clears the marks", fb.isHidden() and not ft.view.find_hits)
+w.actions_by_name["find"].trigger(); settle()
+check("reopening brings the last search back", fb.isVisible() and fb.edit.text() == "lazy dog" and ft.view.find_hits)
+fb.close_bar()
+ft.pdoc.modified = False
+w.close_tab(ft)
+pump()
 
 # --- page number field ----------------------------------------------------------------------------------------
 w.tabs.setCurrentWidget(t); pump()

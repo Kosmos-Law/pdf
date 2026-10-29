@@ -4,11 +4,11 @@ import tempfile
 
 import pymupdf as fitz
 from PySide6.QtCore import QByteArray, QEvent, QMimeData, QPoint, QProcess, QSize, Qt, QTimer, qVersion
-from PySide6.QtGui import (QAction, QActionGroup, QCursor, QDrag, QGuiApplication, QIntValidator, QPalette, QKeySequence,
-                           QMouseEvent)
-from PySide6.QtWidgets import (QApplication, QComboBox, QDoubleSpinBox, QFileDialog, QHBoxLayout,
+from PySide6.QtGui import (QAction, QActionGroup, QCursor, QDrag, QGuiApplication, QIcon, QIntValidator, QPalette,
+                           QKeySequence, QMouseEvent)
+from PySide6.QtWidgets import (QApplication, QComboBox, QDoubleSpinBox, QFileDialog,
                                QInputDialog, QLabel, QLineEdit, QMainWindow, QMenu, QMessageBox,
-                               QProgressDialog, QPushButton, QSizePolicy, QSplitter, QTabBar, QTabWidget,
+                               QProgressDialog, QSizePolicy, QSplitter, QTabBar, QTabWidget,
                                QToolBar, QToolButton, QVBoxLayout, QWidget)
 
 from . import dialogs
@@ -53,42 +53,157 @@ LUCIDE = {
 }
 
 
-class FindBar(QWidget):
-    def __init__(self, tab):
-        super().__init__()
-        self.tab = tab
-        self.edit = QLineEdit(placeholderText="Find in document")
-        self.label = QLabel()
-        lay = QHBoxLayout(self)
-        lay.setContentsMargins(6, 3, 6, 3)
-        lay.addWidget(self.edit, 1)
-        lay.addWidget(QPushButton("Previous", clicked=lambda: self.step(-1)))
-        lay.addWidget(QPushButton("Next", clicked=lambda: self.step(1)))
-        lay.addWidget(self.label)
-        lay.addWidget(QPushButton("Close", clicked=self.close_bar))
-        self.edit.returnPressed.connect(lambda: self.step(-1 if QApplication.keyboardModifiers() & Qt.ShiftModifier else 1))
-        self.edit.textChanged.connect(lambda: setattr(self, "_term", None))
-        self._term = None
+class FindBar(QToolBar):
+    """Find in the document, in a bar that opens under the toolbar, near the button that
+    opens it. The search starts as you type and runs a few pages at a time, beginning with the
+    page in view, so a long document doesn't hold up the window."""
 
-    def step(self, d):
-        view = self.tab.view
-        term = self.edit.text()
-        if term != self._term:
-            n = view.find(term)
-            self._term = term
-            self.label.setText(f"{n} found" if n else "Not found")
-        view.find_step(d)
-        if view.find_hits:
-            self.label.setText(f"{view.find_index + 1} of {len(view.find_hits)}")
+    def __init__(self, win):
+        super().__init__("Find")
+        self.win = win
+        self.tab = None
+        self.setObjectName("findBar")
+        self.setMovable(False)
+        self.setIconSize(QSize(theme.TOOLBAR_ICON, theme.TOOLBAR_ICON))
+        self.toggleViewAction().setVisible(False)       # not offered in the toolbar menu
+        self.edit = QLineEdit(placeholderText="Find in document")
+        self.edit.setFixedWidth(300)
+        self.edit.installEventFilter(self)
+        self.search_icon = self.edit.addAction(QIcon(), QLineEdit.LeadingPosition)
+        self.addWidget(self.edit)
+        self.prev = self.addAction("Previous", lambda: self.step(-1))
+        self.prev.setToolTip("Previous match (Shift+Enter)")
+        self.next = self.addAction("Next", lambda: self.step(1))
+        self.next.setToolTip("Next match (Enter)")
+        self.addSeparator()
+        self.case = self.addAction("Match Case")
+        self.whole = self.addAction("Whole Words")
+        for a, tip in ((self.case, "Only matches with the same capitals"),
+                       (self.whole, "Only whole words, so “art” doesn't find “party”")):
+            a.setCheckable(True)
+            a.setToolTip(tip)
+            a.toggled.connect(lambda _: self.restart())
+            self.widgetForAction(a).setToolButtonStyle(Qt.ToolButtonTextOnly)
+        self.addSeparator()
+        self.label = QLabel()
+        self.addWidget(self.label)
+        spacer = QWidget()
+        spacer.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        self.addWidget(spacer)
+        self.close_action = self.addAction("Close", self.close_bar)
+        self.close_action.setToolTip("Close (Esc)")
+        self.typing = QTimer(self, singleShot=True, interval=250)    # search once typing pauses
+        self.typing.timeout.connect(self.restart)
+        self.edit.textChanged.connect(lambda: self.typing.start())
+        self.edit.returnPressed.connect(
+            lambda: self.step(-1 if QApplication.keyboardModifiers() & Qt.ShiftModifier else 1))
+        self.searching = QTimer(self, interval=0)
+        self.searching.timeout.connect(self._search_more)
+        self._jump = False
+        self.hide()
+
+    def apply_colors(self, colors):
+        self.search_icon.setIcon(lucide("search", colors.text))
+        self.prev.setIcon(lucide("chevron-up", colors.text))
+        self.next.setIcon(lucide("chevron-down", colors.text))
+        self.close_action.setIcon(lucide("x", colors.text))
+
+    def eventFilter(self, obj, e):
+        if obj is self.edit and e.type() == QEvent.KeyPress and e.key() == Qt.Key_Escape:
+            self.close_bar()
+            return True
+        return super().eventFilter(obj, e)
 
     def open_bar(self):
+        was_open = self.isVisible()
         self.show()
         self.edit.setFocus()
         self.edit.selectAll()
+        if not was_open and self.edit.text().strip():
+            self.restart(jump=False)        # bring back the last search's matches
 
     def close_bar(self):
         self.hide()
-        self.tab.view.find("")
+        self.searching.stop()
+        self.typing.stop()
+        if self.tab:
+            self.tab.view.find("")
+            self.tab.view.canvas.setFocus()
+        self.label.clear()
+
+    def set_tab(self, tab):
+        """The window now shows this tab (or none)."""
+        if tab is self.tab:
+            return
+        if self.tab:
+            self.tab.pdoc.structure_changed.disconnect(self._restructured)
+            self.tab.view.find("")
+        self.tab = tab
+        self.searching.stop()
+        if tab:
+            tab.pdoc.structure_changed.connect(self._restructured)
+        if self.isVisible() and self.edit.text().strip():
+            self.restart(jump=False)
+        else:
+            self.label.clear()
+
+    def _restructured(self):
+        # Pages were added, removed or moved, which clears the view's matches; find them again.
+        if self.isVisible() and self.edit.text().strip():
+            self.restart(jump=False)
+
+    def restart(self, jump=True):
+        self.typing.stop()
+        if not self.tab:
+            return
+        self.tab.view.find(self.edit.text(), self.case.isChecked(), self.whole.isChecked())
+        self._jump = jump
+        self.searching.start()
+        self._search_more()
+
+    def _search_more(self):
+        view = self.tab.view if self.tab else None
+        if view is None:
+            self.searching.stop()
+            return
+        done = view.find_more()
+        if self._jump and view.find_hits:
+            self._jump = False
+            view.find_step(1)
+        if done:
+            self.searching.stop()
+        self.show_count()
+
+    def step(self, d):
+        if not self.tab:
+            return
+        if self.typing.isActive() or (self.edit.text().strip() and not self.tab.view.find_hits
+                                      and not self.searching.isActive()):
+            self.restart(jump=d > 0)        # Enter pressed before the search began
+            if d < 0:
+                self.tab.view.find_step(-1)
+        else:
+            self.tab.view.find_step(d)
+        self.show_count()
+
+    def show_count(self):
+        view = self.tab.view if self.tab else None
+        n = len(view.find_hits) if view else 0
+        searching = self.searching.isActive()
+        if not view or not self.edit.text().strip():
+            text = ""
+        elif view.find_index >= 0:
+            text = f"{view.find_index + 1} of {n}" + ("…" if searching else "")
+        elif searching:
+            text = f"Searching… {n} found" if n else "Searching…"
+        else:
+            text = "No matches" if not n else f"{n} match{'es' if n != 1 else ''}"
+        self.label.setText(text)
+        not_found = bool(view and self.edit.text().strip() and not n and not searching)
+        if self.edit.property("notFound") != not_found:
+            self.edit.setProperty("notFound", not_found)
+            self.edit.style().unpolish(self.edit)
+            self.edit.style().polish(self.edit)
 
 
 class DocTab(QWidget):
@@ -99,17 +214,9 @@ class DocTab(QWidget):
         self.pdoc = pdoc
         self.thumbs = ThumbPane(pdoc)
         self.view = PageView(pdoc)
-        self.findbar = FindBar(self)
-        self.findbar.hide()
-        right = QWidget()
-        rl = QVBoxLayout(right)
-        rl.setContentsMargins(0, 0, 0, 0)
-        rl.setSpacing(0)
-        rl.addWidget(self.findbar)
-        rl.addWidget(self.view, 1)
         self.splitter = QSplitter()
         self.splitter.addWidget(self.thumbs)
-        self.splitter.addWidget(right)
+        self.splitter.addWidget(self.view)
         self.splitter.setStretchFactor(1, 1)
         self.splitter.setHandleWidth(1)
         self.splitter.setSizes([170, 900])
@@ -140,6 +247,7 @@ class DocTab(QWidget):
                 w.tabs.setTabText(i, self.pdoc.display_name())
                 w.tabs.setTabToolTip(i, self.pdoc.path or "Not saved yet")
             w.update_window_title()
+            w.update_badges()
 
     # --- page selection helpers ---------------------------------------------------
     def target_pages(self):
@@ -407,6 +515,8 @@ class MainWindow(QMainWindow):
         self.font_size.valueChanged.connect(lambda v: self.tab and self.tab.view.set_font_size(v))
         self.hl_color = HIGHLIGHT_COLORS["Yellow"]
         self.colors = None
+        self.ocr_needed = False
+        self._badges = {}                 # action name -> whether its icon has the red dot
         self._ocr_check = QTimer(self, singleShot=True, interval=10)
         self._ocr_check.timeout.connect(self._check_ocr)
         self.build_actions()
@@ -454,7 +564,10 @@ class MainWindow(QMainWindow):
         A("cut", "Cu&t", self.cut, QKeySequence.Cut)
         A("paste", "&Paste Pages", self.on_tab("paste_pages"), QKeySequence.Paste)
         A("select_all", "Select &All", self.select_all, QKeySequence.SelectAll)
-        A("find", "&Find…", lambda: self.tab and self.tab.findbar.open_bar(), QKeySequence.Find)
+        A("find", "&Find…", lambda: self.findbar.open_bar(), QKeySequence.Find, tip="Find in document (Ctrl+F)")
+        A("find_next", "Find &Next", lambda: self.find_step(1), [QKeySequence(QKeySequence.FindNext), QKeySequence("Ctrl+G")])
+        A("find_prev", "Find Pre&vious", lambda: self.find_step(-1),
+          [QKeySequence(QKeySequence.FindPrevious), QKeySequence("Ctrl+Shift+G")])
         A("cut_pages", "Cut Pages", self.on_tab("cut_pages"))
         A("copy_pages", "Copy Pages", self.on_tab("copy_pages"))
         A("paste_pages", "Paste Pages", self.on_tab("paste_pages"))
@@ -486,11 +599,11 @@ class MainWindow(QMainWindow):
         self.mode_group = QActionGroup(self)
         for name, text, key, tip in (
                 ("select", "Select", "V", "Select and copy text; click an annotation to move or delete it"),
-                ("highlight", "Highlight", "H", "Drag across text to highlight it"),
+                ("highlight", "Highlight", "H", "Drag across text to highlight it, or highlight the selected text"),
                 ("typewriter", "Typewriter", "T", "Click to type text onto the page"),
                 ("redact", "Redact", "R", "Drag a box around content to mark it for redaction")):
-            a = A(f"mode_{name}", text, lambda checked=False, n=name: self.set_mode(n), key,
-                  tip=f"{tip} ({key})", checkable=True)
+            slot = self.highlight_clicked if name == "highlight" else (lambda checked=False, n=name: self.set_mode(n))
+            a = A(f"mode_{name}", text, slot, key, tip=f"{tip} ({key})", checkable=True)
             self.mode_group.addAction(a)
         self.actions_by_name["mode_select"].setChecked(True)
 
@@ -509,7 +622,7 @@ class MainWindow(QMainWindow):
         self.recent_menu.aboutToShow.connect(self.fill_recent_menu)
         for n in ("save", "save_as", None, "combine", "images", None, "new_window", "close_tab", "quit"):
             file_menu.addSeparator() if n is None else file_menu.addAction(a[n])
-        menu("&Edit", ["undo", "redo", None, "cut", "copy", "paste", "select_all", None, "find"])
+        menu("&Edit", ["undo", "redo", None, "cut", "copy", "paste", "select_all", None, "find", "find_next", "find_prev"])
         menu("&View", ["zoom_in", "zoom_out", "fit_width", "fit_page", "actual", None, "thumbs"])
         menu("&Pages", ["rotate_left", "rotate_right", "rotate_180", None, "cut_pages", "copy_pages", "paste_pages",
                         "delete_pages", None, "extract", "insert_blank", "insert_file", "select_all_pages"])
@@ -523,8 +636,9 @@ class MainWindow(QMainWindow):
         tb.setMovable(False)
         tb.setIconSize(QSize(theme.TOOLBAR_ICON, theme.TOOLBAR_ICON))
         self.addToolBar(tb)
-        for n in ("open", "save"):
+        for n in ("open", "save", "ocr"):
             tb.addAction(a[n])
+        self.ocr_button = tb.widgetForAction(a["ocr"])
         tb.addSeparator()
         for n in ("undo", "redo"):
             tb.addAction(a[n])
@@ -538,11 +652,12 @@ class MainWindow(QMainWindow):
         tb.addAction(a["rotate_left"])
         tb.addAction(a["rotate_right"])
         tb.addSeparator()
-        for n in ("mode_select", "mode_highlight"):
-            tb.addAction(a[n])
+        tb.addAction(a["mode_select"])
+        # Highlight is a split button, as in a word processor: the button highlights, and
+        # its arrow chooses the colour, which shows as a stripe under the highlighter.
         colors = QToolButton()
-        colors.setToolTip("Highlight colour")
-        colors.setPopupMode(QToolButton.InstantPopup)
+        colors.setDefaultAction(a["mode_highlight"])
+        colors.setPopupMode(QToolButton.MenuButtonPopup)
         cm = QMenu(colors)
         for name, rgb in HIGHLIGHT_COLORS.items():
             cm.addAction(swatch(rgb), name, lambda rgb=rgb: self.set_hl_color(rgb))
@@ -550,13 +665,13 @@ class MainWindow(QMainWindow):
         self.clear_action = cm.addAction("Clear (remove highlights)", lambda: self.set_hl_color(None))
         colors.setMenu(cm)
         self.color_button = colors
-        colors.setIcon(swatch(self.hl_color))
         tb.addWidget(colors)
         tb.addAction(a["mode_typewriter"])
         tb.addWidget(self.font_size)
-        tb.addSeparator()
-        tb.addAction(a["ocr"])
-        self.ocr_button = tb.widgetForAction(a["ocr"])
+        spacer = QWidget()
+        spacer.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        tb.addWidget(spacer)
+        tb.addAction(a["find"])
         # Common commands are icons with tooltips; the tools keep a label so they are easy to find.
         labelled = {a[n] for n in ("mode_select", "mode_highlight", "mode_typewriter", "ocr")}
         tb.setToolButtonStyle(Qt.ToolButtonIconOnly)
@@ -564,6 +679,9 @@ class MainWindow(QMainWindow):
             if b.defaultAction() in labelled:
                 b.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
         self.build_redact_bar()
+        self.findbar = FindBar(self)
+        self.addToolBarBreak()
+        self.addToolBar(self.findbar)
 
     def build_redact_bar(self):
         """A second row that appears only while redacting (Tools › Redact, or R), with the
@@ -598,10 +716,29 @@ class MainWindow(QMainWindow):
         n = self.tab.pdoc.redaction_count() if self.tab else 0
         self.redact_count.setText(f"{n} area{'' if n == 1 else 's'} marked  " if n else "Nothing marked yet  ")
 
-    # --- OCR button -----------------------------------------------------------
+    def find_step(self, d):
+        """Find Next / Previous: step through the matches, or open the find bar if it's closed."""
+        if self.findbar.isVisible() and self.findbar.edit.text().strip():
+            self.findbar.step(d)
+        else:
+            self.findbar.open_bar()
+
+    # --- badges: a red dot on Save and OCR when they have something waiting ------------
+    def update_badges(self):
+        t = self.tab
+        wanted = {"save": bool(t and t.pdoc.modified), "ocr": bool(t and self.ocr_needed)}
+        for name, on in wanted.items():
+            if self._badges.get(name) != on:
+                self._badges[name] = on
+                self.actions_by_name[name].setIcon(lucide(LUCIDE[name], self.colors.text, dot=on))
+        self.actions_by_name["save"].setToolTip("Save (there are unsaved changes)" if wanted["save"] else "Save")
+        self.actions_by_name["ocr"].setToolTip(
+            "Some pages are scans without text. OCR them to make the document searchable" if wanted["ocr"]
+            else "OCR (Make Searchable)")
+
     def check_ocr_soon(self):
-        """Look, a little at a time, for pages that are scans without text, and light up
-        the OCR button if there are any."""
+        """Look, a little at a time, for pages that are scans without text, and put a dot
+        on the OCR button if there are any."""
         self._ocr_check.start()
 
     def _check_ocr(self):
@@ -610,12 +747,8 @@ class MainWindow(QMainWindow):
         if found is None:                  # a long document: carry on after the window has had a turn
             self._ocr_check.start()
             return
-        self.ocr_button.setProperty("attention", found)
-        self.ocr_button.style().unpolish(self.ocr_button)
-        self.ocr_button.style().polish(self.ocr_button)
-        self.actions_by_name["ocr"].setToolTip(
-            "Some pages are scans without text. OCR them to make the document searchable" if found
-            else "OCR (Make Searchable)")
+        self.ocr_needed = found
+        self.update_badges()
         if found and not getattr(t.pdoc, "ocr_hint_shown", False):
             t.pdoc.ocr_hint_shown = True
             self.statusBar().showMessage("This document has scanned pages without text. "
@@ -645,6 +778,7 @@ class MainWindow(QMainWindow):
             z = self.tab.view
             self.zoom_box.setEditText({"width": "Fit width", "page": "Fit page"}.get(z.fit, f"{round(z.zoom * 100)}%"))
         self.update_window_title()
+        self.update_badges()
 
     def update_document_state(self):
         """After the document in view changes, or a different one comes into view."""
@@ -656,6 +790,7 @@ class MainWindow(QMainWindow):
         t = self.tab
         if t:
             self.apply_settings(t)
+        self.findbar.set_tab(t)
         self.update_document_state()
 
     def apply_theme(self):
@@ -667,12 +802,15 @@ class MainWindow(QMainWindow):
         for name, a in self.actions_by_name.items():
             if name in LUCIDE:
                 a.setIcon(lucide(LUCIDE[name], colors.text))
+        self._badges.clear()
+        self.update_badges()
         for t in self.doc_tabs():
             t.view.apply_colors(colors)
             t.thumbs.apply_colors(colors)
         if hasattr(self, "color_button"):
-            self.color_button.setIcon(self.hl_icon())
+            self.actions_by_name["mode_highlight"].setIcon(self.hl_icon())
             self.redact_icon.setPixmap(lucide(LUCIDE["mode_redact"], colors.text).pixmap(theme.TOOLBAR_ICON))
+            self.findbar.apply_colors(colors)
             self.clear_action.setIcon(lucide("eraser", colors.text))
         app = QApplication.instance()
         sheet = stylesheet(colors)
@@ -702,17 +840,32 @@ class MainWindow(QMainWindow):
         self.update_redact_bar()
 
     def hl_icon(self):
-        return lucide("eraser", self.colors.text) if self.hl_color is None else swatch(self.hl_color)
+        if self.hl_color is None:
+            return lucide("eraser", self.colors.text)
+        return lucide(LUCIDE["mode_highlight"], self.colors.text, stripe=self.hl_color)
+
+    def highlight_clicked(self):
+        """The Highlight button (or H): highlight the selected text if there is some, and
+        stay in the current tool; otherwise switch to the highlighter."""
+        if self.tab and self.tab.view.highlighter_on_selection():
+            self.actions_by_name[f"mode_{self.mode}"].setChecked(True)   # the click checked Highlight
+        else:
+            self.set_mode("highlight")
 
     def set_hl_color(self, rgb):
-        """Pick the highlighter colour; None turns the highlighter into an eraser."""
+        """Pick the highlighter colour; None turns the highlighter into an eraser. Text
+        already selected gets the new colour (or, for None, loses its highlights)."""
         self.hl_color = rgb
-        self.color_button.setIcon(self.hl_icon())
-        self.color_button.setToolTip("Highlighter: removing highlights" if rgb is None else "Highlight colour")
-        if rgb is None:
-            self.statusBar().showMessage("Drag across highlighted text, or click a highlight, to remove it.", 8000)
+        a = self.actions_by_name["mode_highlight"]
+        a.setIcon(self.hl_icon())
+        a.setToolTip("Remove highlights: drag across highlighted text, or click a highlight (H)" if rgb is None
+                     else "Drag across text to highlight it, or highlight the selected text (H)")
         for t in self.doc_tabs():
             t.view.hl_color = rgb
+        if self.tab and self.tab.view.highlighter_on_selection():
+            return
+        if rgb is None:
+            self.statusBar().showMessage("Drag across highlighted text, or click a highlight, to remove it.", 8000)
         self.set_mode("highlight")
 
     def toggle_thumbs(self):

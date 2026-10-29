@@ -24,7 +24,7 @@ PAGE_SIZES = {
     "A4": (595, 842),
 }
 UNDO_LIMIT = 20
-SCAN_IMAGE_SHARE = 0.25   # an image covering this much of a page, with no text, looks like a scan
+SCAN_IMAGE_SHARE = 0.25   # images covering this much of a page, with no text, look like a scan
 
 
 def page_needs_ocr(page):
@@ -33,8 +33,9 @@ def page_needs_ocr(page):
     or one with only a small logo, doesn't need OCR.)"""
     if not page.get_images() or page.get_text("text").strip():
         return False
-    area = abs(page.rect)
-    return any(abs(fitz.Rect(info["bbox"])) >= SCAN_IMAGE_SHARE * area for info in page.get_image_info())
+    # Added up, since some scanners store a page as several strips.
+    covered = sum(abs(fitz.Rect(info["bbox"]) & page.rect) for info in page.get_image_info())
+    return covered >= SCAN_IMAGE_SHARE * abs(page.rect)
 
 
 def is_image(path):

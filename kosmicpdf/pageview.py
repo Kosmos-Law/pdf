@@ -1,4 +1,7 @@
 """Continuous-scroll page view with the annotation tools."""
+import bisect
+import re
+import time
 from collections import OrderedDict
 
 import pymupdf as fitz
@@ -11,6 +14,9 @@ from .core import MIME_PAGES, mime_pdf_bytes, parse_da_fontsize
 from .theme import NOTE_MENU_ICON, Colors, draw_page_shadow, lucide, swatch
 
 MARGIN = 12      # space around and between pages, in screen pixels
+FIND_OTHER = QColor(255, 222, 0, 95)       # find matches: yellow, stronger than the firm's pale highlight
+FIND_CURRENT = QColor(255, 204, 0, 175)
+FIND_OUTLINE = QColor(176, 132, 0)
 CACHE_PAGES = 24
 def _hex(h):
     return tuple(int(h[k:k + 2], 16) / 255 for k in (1, 3, 5))
@@ -82,6 +88,45 @@ def line_rects(chars, lo, hi):
             continue
         rects[line] = rects[line] | r if line in rects else fitz.Rect(r)
     return list(rects.values())
+
+
+# Characters searched as if they were the plain ones, so "find" matches the "ﬁ" ligature
+# and "Plaintiff's" matches "Plaintiff’s".
+SEARCH_AS = {"ﬀ": "ff", "ﬁ": "fi", "ﬂ": "fl", "ﬃ": "ffi", "ﬄ": "ffl", "ﬅ": "st", "ﬆ": "st",
+             "\u2018": "'", "\u2019": "'", "\u201c": '"', "\u201d": '"', "\u00a0": " "}
+
+
+def search_pattern(term, match_case=False, whole_words=False):
+    """A regular expression for a find term, or None for an empty one. Spaces in the
+    term match any run of spaces or a line break, so a phrase wrapped onto the next
+    line is still found."""
+    words = "".join(SEARCH_AS.get(c, c) for c in term).split()
+    if not words:
+        return None
+    pattern = r"\s+".join(re.escape(w) for w in words)
+    if whole_words:
+        pattern = rf"(?<!\w){pattern}(?!\w)"
+    return re.compile(pattern, 0 if match_case else re.IGNORECASE)
+
+
+def find_in_chars(chars, pattern):
+    """Each match of pattern in a page's characters, as a list of rectangles (one per line)."""
+    text, owner = [], []          # the searchable text, and the character each of its letters came from
+    last_line = None
+    for n, (_, c, line) in enumerate(chars):
+        if last_line is not None and line != last_line:
+            text.append(" ")              # a line break reads as a space
+            owner.append(None)
+        last_line = line
+        for letter in SEARCH_AS.get(c, c):
+            text.append(letter)
+            owner.append(n)
+    hits = []
+    for m in pattern.finditer("".join(text)):
+        used = [n for n in owner[m.start():m.end()] if n is not None]
+        if used:
+            hits.append(line_rects(chars, used[0], used[-1]))
+    return hits
 
 
 def chars_text(chars, lo, hi):
@@ -392,8 +437,10 @@ class PageView(QScrollArea):
 
         self.sel = None               # (page, lo, hi) text selection
         self.sel_annot = None         # (page, xref) selected annotation
-        self.find_hits = []           # [(page, fitz.Rect)]
+        self.find_hits = []           # [(page, [fitz.Rect, one per line])], in page order
         self.find_index = -1
+        self._find_pattern = None     # the search still in progress, if any (see find_more)
+        self._find_pages = []         # pages it has yet to look at
         self._press = None            # state for drags
         self._rubber = None           # (page, QRectF in canvas coords)
         self._move_offset = None
@@ -416,6 +463,8 @@ class PageView(QScrollArea):
     def _structure_changed(self):
         self.sel = self.sel_annot = None
         self.find_hits = []
+        self.find_index = -1
+        self._find_pattern = None
         self._chars.clear()
         self.relayout()
         self.canvas.update()
@@ -587,11 +636,13 @@ class PageView(QScrollArea):
             p.setBrush(self.colors.accent_alpha(80))
             for r in line_rects(self.chars(i), self.sel[1], self.sel[2]):
                 p.drawRect(self.to_canvas(i, r))
-        for n, (pi, r) in enumerate(self.find_hits):
+        for n, (pi, rects) in enumerate(self.find_hits):
             if pi == i:
-                p.setPen(Qt.NoPen)
-                p.setBrush(QColor(255, 140, 0, 150 if n == self.find_index else 70))
-                p.drawRect(self.to_canvas(i, r))
+                current = n == self.find_index        # the match you're on: deeper, with an outline
+                p.setPen(QPen(FIND_OUTLINE, 1) if current else Qt.NoPen)
+                p.setBrush(FIND_CURRENT if current else FIND_OTHER)
+                for r in rects:
+                    p.drawRect(self.to_canvas(i, r))
         if self.sel_annot and self.sel_annot[0] == i:
             annot = page.load_annot(self.sel_annot[1])
             if annot:
@@ -916,6 +967,21 @@ class PageView(QScrollArea):
         if rects:
             self.add_highlight(i, rects)
 
+    def highlighter_on_selection(self):
+        """What the Highlight button does to text that is already selected: highlight it in
+        the current colour, or, with Clear chosen, remove the highlights under it. False if
+        nothing is selected."""
+        if not self.sel:
+            return False
+        if self.hl_color is None:
+            i, lo, hi = self.sel
+            self.sel = None
+            self.erase_highlights(i, line_rects(self.chars(i), lo, hi))
+        else:
+            self.highlight_selection()
+        self.canvas.update()
+        return True
+
     def add_redaction(self, i, rects):
         self.pdoc.checkpoint()
         page = self.pdoc.doc[i]
@@ -1058,26 +1124,47 @@ class PageView(QScrollArea):
             self.canvas.setFocus()
 
     # --- find ---------------------------------------------------------------
-    def find(self, term):
+    def find(self, term, match_case=False, whole_words=False):
+        """Start a search; find_more() does the work, a few pages at a time, beginning at
+        the page in view so its matches turn up first. An empty term clears the search."""
         self.find_hits = []
-        if term:
-            for i in range(self.pdoc.page_count):
-                for r in self.pdoc.doc[i].search_for(term):
-                    self.find_hits.append((i, r))
         self.find_index = -1
+        self._find_pattern = search_pattern(term, match_case, whole_words)
+        n = self.pdoc.page_count
+        self._find_pages = [(self._current + k) % n for k in range(n)] if self._find_pattern else []
         self.canvas.update()
-        return len(self.find_hits)
+
+    def find_more(self, budget=0.03):
+        """Search on for up to `budget` seconds. True once every page has been searched."""
+        start = time.monotonic()
+        found = False
+        while self._find_pages and time.monotonic() - start < budget:
+            i = self._find_pages.pop(0)
+            hits = find_in_chars(page_chars(self.pdoc.doc[i]), self._find_pattern)
+            if hits:
+                at = bisect.bisect_left([pi for pi, _ in self.find_hits], i)
+                self.find_hits[at:at] = [(i, rects) for rects in hits]
+                if 0 <= at <= self.find_index:
+                    self.find_index += len(hits)      # keep pointing at the same match
+                found = True
+        if found:
+            self.canvas.update()
+        return not self._find_pages
 
     def find_step(self, step):
         if not self.find_hits:
             return
         if self.find_index < 0:
-            # start from the first hit at or after the current page
-            after = [n for n, (pi, _) in enumerate(self.find_hits) if pi >= self._current]
-            self.find_index = after[0] if after and step > 0 else (len(self.find_hits) - 1 if step < 0 else 0)
+            # the first match from the page in view onwards (or, going back, the last one up to it)
+            if step > 0:
+                after = [n for n, (pi, _) in enumerate(self.find_hits) if pi >= self._current]
+                self.find_index = after[0] if after else 0
+            else:
+                before = [n for n, (pi, _) in enumerate(self.find_hits) if pi <= self._current]
+                self.find_index = before[-1] if before else len(self.find_hits) - 1
         else:
             self.find_index = (self.find_index + step) % len(self.find_hits)
-        i, r = self.find_hits[self.find_index]
-        vr = r * self.pdoc.doc[i].rotation_matrix
+        i, rects = self.find_hits[self.find_index]
+        vr = rects[0] * self.pdoc.doc[i].rotation_matrix
         self.go_to_page(i, vr.y0)
         self.canvas.update()
