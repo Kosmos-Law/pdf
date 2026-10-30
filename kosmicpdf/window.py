@@ -55,7 +55,7 @@ LUCIDE = {
     "redact_search": "text-search", "apply_redactions": "check-check", "redact_done": "x", "about": "info",
     "redact_text": "text-select", "redact_area": "square-dashed",
     "mode_select": "text-cursor", "mode_highlight": "highlighter", "mode_typewriter": "type", "mode_redact": "eye-off",
-    "mode_label": "stamp",
+    "mode_label": "stamp", "label_files": "stamp",
 }
 
 
@@ -608,6 +608,8 @@ class MainWindow(QMainWindow):
         A("bates", "&Bates Numbering…", self.bates)
         A("bates_files", "Bates Number &Files…", self.bates_files,
           tip="Bates number several files in an order you set, into numbered copies")
+        A("label_files", "Label E&xhibit Files…", self.label_files,
+          tip="Put an exhibit label on each of several files, numbered in an order you set, and name them to match")
         A("ocr", "&OCR (Make Searchable)…", self.ocr).setIconText("OCR")
         A("pdfa", "Convert to &PDF/A…", self.pdfa)
         A("flatten", "&Flatten Annotations and Forms", self.flatten)
@@ -662,7 +664,7 @@ class MainWindow(QMainWindow):
         menu("&Pages", ["rotate_left", "rotate_right", "rotate_180", None, "cut_pages", "copy_pages", "paste_pages",
                         "delete_pages", None, "extract", "insert_blank", "insert_file", "select_all_pages"])
         menu("&Tools", ["mode_select", "mode_highlight", "mode_typewriter", "mode_label", "mode_redact", None,
-                        "bates", "bates_files", "ocr", "pdfa", "flatten"])
+                        "bates", "bates_files", "label_files", "ocr", "pdfa", "flatten"])
         menu("&Help", ["about"])
         # Qt hears a menu item's shortcut only while its menu is in reach; with no menu bar,
         # the window has to hold every action itself for Ctrl+S, F3 and the rest to work.
@@ -851,8 +853,8 @@ class MainWindow(QMainWindow):
         self.tabs.setVisible(has)
         self.empty.setVisible(not has)
         for n, a in self.actions_by_name.items():
-            if n not in ("open", "new_window", "combine", "images", "bates_files", "quit", "about", "thumbs",
-                         "redact_done", "menu"):
+            if n not in ("open", "new_window", "combine", "images", "bates_files", "label_files", "quit", "about",
+                         "thumbs", "redact_done", "menu"):
                 a.setEnabled(has)
         if has:
             pdoc = self.tab.pdoc
@@ -1408,6 +1410,65 @@ class MainWindow(QMainWindow):
         box.exec()
         if box.clickedButton() is open_folder:
             QDesktopServices.openUrl(QUrl.fromLocalFile(dlg.folder.text()))
+
+    def label_files(self):
+        """Tools › Label Exhibit Files: label a set of files in order, into copies or in place."""
+        dlg = labels.LabelFilesDialog(self)
+        if not dlg.exec():
+            return
+        files, targets = dlg.list.files(), dlg.targets()
+        in_place = dlg.in_place.isChecked()
+        reopen = []
+        if in_place:
+            # A file open in a tab is closed first (and opened again afterwards, at its new
+            # name), so the tab doesn't go on showing the old file; unsaved changes are its own.
+            wanted = {os.path.realpath(f): t for f, t in zip(files, targets)}
+            open_tabs = [(w, t) for w in WINDOWS for t in w.doc_tabs() if t.pdoc.path and os.path.realpath(t.pdoc.path) in wanted]
+            unsaved = [os.path.basename(t.pdoc.path) for _, t in open_tabs if t.pdoc.modified]
+            if unsaved:
+                QMessageBox.information(self, "Label Exhibit Files",
+                                        "These files are open with unsaved changes; save or close them first:\n"
+                                        + "\n".join(unsaved))
+                return
+            for w, t in open_tabs:
+                reopen.append(wanted[os.path.realpath(t.pdoc.path)])
+                w.close_tab(t)
+        progress = QProgressDialog("Labelling…", None, 0, len(files), self)
+        progress.setWindowTitle("Label Exhibit Files")
+        progress.setWindowModality(Qt.WindowModal)
+        progress.setMinimumDuration(400)
+
+        def report(k, f):
+            progress.setValue(k)
+            progress.setLabelText(f"Labelling {os.path.basename(f)}…")
+            QApplication.processEvents()
+
+        params = dlg.fields.params()
+        try:
+            done = labels.label_files(files, targets, params, dlg.position.currentText(), dlg.margin.value(),
+                                      in_place, report)
+        except Exception as exc:
+            progress.reset()
+            QMessageBox.warning(self, "Label Exhibit Files", f"Stopped:\n{exc}\n\nNo file was changed.")
+            if reopen:
+                self.open_files(files)
+            return
+        progress.setValue(len(files))
+        labels.remember(dialogs.settings(), dict(params, designation=done[-1][1]), placed=True)
+        if reopen:
+            self.open_files(reopen)
+        renumbered = sum(1 for _, _, had in done if had)
+        where = "where they were" if in_place else f"into {dlg.folder.text()}"
+        what = f"Labelled {len(done)} file(s), {done[0][1]} to {done[-1][1]}, {where}."
+        if renumbered:
+            what += f" {renumbered} already had a label, which was renumbered."
+        box = QMessageBox(QMessageBox.Information, "Label Exhibit Files",
+                          what + ("" if in_place else "\nThe original files are unchanged."), parent=self)
+        open_folder = box.addButton("Open Folder", QMessageBox.AcceptRole)
+        box.addButton(QMessageBox.Close)
+        box.exec()
+        if box.clickedButton() is open_folder:
+            QDesktopServices.openUrl(QUrl.fromLocalFile(os.path.dirname(done[0][0])))
 
     def _need_ocrmypdf(self):
         if dialogs.ocrmypdf_available():

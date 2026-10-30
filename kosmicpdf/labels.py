@@ -11,6 +11,12 @@ viewer. Its caption, number, colour and size are kept in the annotation
 Presets (a caption, colour and size under a name) are the user's own, kept in the
 settings, so they carry across files.
 
+Label Exhibit Files (LabelFilesDialog, label_files) labels a set of files in order, as
+Bates Number Files does: into copies, or the files themselves, renamed "Exhibit 3 -
+Contract.pdf". A file that already carries a label has it renumbered rather than
+doubled, so reordering the list and running it again renumbers the whole set, names
+and stickers together.
+
 MuPDF redraws a Stamp annotation in its own style (a red "Approved") whenever one of its
 properties is changed through the annotation API, which would throw the label away. So
 labels are never passed through ``Annot.update()`` or ``set_rect()``: the appearance is
@@ -18,13 +24,21 @@ written straight into the PDF objects, and a move edits the ``/Rect`` entry dire
 (see set_label_rect).
 """
 import json
+import os
+import re
 from collections import OrderedDict
 
 import pymupdf as fitz
 from PySide6.QtCore import QSize, Qt
 from PySide6.QtGui import QColor, QImage, QPixmap
-from PySide6.QtWidgets import (QComboBox, QDialog, QDialogButtonBox, QColorDialog, QFormLayout, QHBoxLayout,
-                               QInputDialog, QLabel, QLineEdit, QMessageBox, QPushButton, QVBoxLayout)
+from PySide6.QtCore import Signal
+from PySide6.QtGui import QPalette
+from PySide6.QtWidgets import (QComboBox, QDialog, QDialogButtonBox, QColorDialog, QDoubleSpinBox, QFileDialog,
+                               QFormLayout, QHBoxLayout, QInputDialog, QLabel, QLineEdit, QMessageBox, QPushButton,
+                               QRadioButton, QVBoxLayout, QWidget)
+
+from .core import load_any
+from .dialogs import FileList, PDFS_AND_IMAGES, POSITIONS, settings as app_settings
 
 LABEL_NAME = "KosmicPDFExhibitLabel"   # the stamp's /Name, which marks it as one of ours
 LABEL_KEY = "KosmicPDFLabel"            # the annotation key holding the label's settings, as JSON
@@ -306,19 +320,16 @@ def size_text(w, h):
     return f'{name}  ({w:g}" × {h:g}")'
 
 
-class LabelDialog(QDialog):
-    """Caption, number or letter, colour and size of an exhibit label, with a preview.
-    For a new label, OK means "go and place it"; for an existing one, the changes apply.
-    A preset (a caption, colour and size under a name) fills the fields in one go; the
-    user can save the fields as one, or remove one, and they carry across files."""
+class LabelFields(QWidget):
+    """The settings of an exhibit label: preset, caption, number or letter, colour and size,
+    with a preview. Shared by the label dialog and Label Exhibit Files. A preset (a
+    caption, colour and size under a name) fills the fields in one go; the user can save
+    the fields as one, or remove one, and they carry across files."""
+    changed = Signal()
 
-    def __init__(self, parent, params, editing=False, settings=None):
-        super().__init__(parent)
-        self.setWindowTitle("Edit Exhibit Label" if editing else "Exhibit Label")
-        if settings is None:
-            from .dialogs import settings as app_settings
-            settings = app_settings()
-        self.settings = settings
+    def __init__(self, params, settings=None, designation_label="Number or letter"):
+        super().__init__()
+        self.settings = settings if settings is not None else app_settings()
         self.preset = QComboBox()
         self.preset.setToolTip("A saved caption, colour and size")
         self.save_button = QPushButton("Save…")
@@ -344,23 +355,14 @@ class LabelDialog(QDialog):
         self.preview = QLabel()
         self.preview.setAlignment(Qt.AlignCenter)
         self.preview.setMinimumHeight(int(SIZES["Large"][1] * 72) + 8)
-        form = QFormLayout()
-        form.addRow("Preset", preset_row)
-        form.addRow("Caption", self.caption)
-        form.addRow("Number or letter", self.designation)
-        form.addRow("Colour", self.color)
-        form.addRow("Size", self.size)
-        form.addRow("Preview", self.preview)
-        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
-        buttons.button(QDialogButtonBox.Ok).setText("Apply" if editing else "Place")
-        buttons.accepted.connect(self.accept)
-        buttons.rejected.connect(self.reject)
-        lay = QVBoxLayout(self)
-        lay.addLayout(form)
-        if not editing:
-            lay.addWidget(QLabel("Click where the label should go; it follows the mouse until then.\n"
-                                 "Afterwards, drag it to move it, or use the button on its corner to delete it."))
-        lay.addWidget(buttons)
+        self.form = QFormLayout(self)
+        self.form.setContentsMargins(0, 0, 0, 0)
+        self.form.addRow("Preset", preset_row)
+        self.form.addRow("Caption", self.caption)
+        self.form.addRow(designation_label, self.designation)
+        self.form.addRow("Colour", self.color)
+        self.form.addRow("Size", self.size)
+        self.form.addRow("Preview", self.preview)
         self._set_color(params["color"])
         self._set_size(params["width"], params["height"])
         self._fill_presets()
@@ -371,8 +373,6 @@ class LabelDialog(QDialog):
         self.preset.activated.connect(self._preset_chosen)
         self.save_button.clicked.connect(self._save_preset)
         self.remove_button.clicked.connect(self._remove_preset)
-        self.designation.setFocus()
-        self.designation.selectAll()
         self._update()
 
     # --- presets ---
@@ -469,3 +469,282 @@ class LabelDialog(QDialog):
         self.preview.setMinimumSize(QSize(int(p["width"] * 72) + 8, int(SIZES["Large"][1] * 72) + 8))
         if self.preset.count():
             self._match_preset()
+        self.changed.emit()
+
+
+class LabelDialog(QDialog):
+    """Caption, number or letter, colour and size of one exhibit label (see LabelFields).
+    For a new label, OK means "go and place it"; for an existing one, the changes apply."""
+
+    def __init__(self, parent, params, editing=False, settings=None):
+        super().__init__(parent)
+        self.setWindowTitle("Edit Exhibit Label" if editing else "Exhibit Label")
+        self.fields = LabelFields(params, settings)
+        for name in ("preset", "save_button", "remove_button", "caption", "designation", "color", "size", "preview",
+                     "params", "_update", "_preset_chosen"):
+            setattr(self, name, getattr(self.fields, name))
+        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        buttons.button(QDialogButtonBox.Ok).setText("Apply" if editing else "Place")
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        lay = QVBoxLayout(self)
+        lay.addWidget(self.fields)
+        if not editing:
+            lay.addWidget(QLabel("Click where the label should go; it follows the mouse until then.\n"
+                                 "Afterwards, drag it to move it, or use the button on its corner to delete it."))
+        lay.addWidget(buttons)
+        self.designation.setFocus()
+        self.designation.selectAll()
+
+
+# --- Label Exhibit Files: a set of files, labelled and named in order ----------------------
+# A file name's existing designation prefix, "Exhibit 3 - " or "3 - ", which is replaced
+# when the file is labelled (so renumbering doesn't pile prefixes up).
+NAME_PREFIX = re.compile(r"^(?:Exhibit\s+)?(\d{1,4}|[A-Za-z]{1,3}|\d{1,4}-[A-Za-z]{1,3})\s+-\s+", re.IGNORECASE)
+NAMINGS = OrderedDict([("exhibit", "Exhibit 3 - name.pdf"), ("keep", "Keep the file names")])
+DEFAULT_MARGIN = 18.0    # pt from the page's edge to the label
+
+
+def exhibit_name(path, designation, naming="exhibit"):
+    """The labelled file's name: 'Exhibit 3 - Contract.pdf', with any designation the
+    name already carried replaced; or the name kept, as a PDF."""
+    stem = os.path.splitext(os.path.basename(path))[0]
+    if naming == "keep":
+        return stem + ".pdf"
+    return f"Exhibit {designation} - {NAME_PREFIX.sub('', stem, count=1)}.pdf"
+
+
+def file_labels(path):
+    """The designations of the labels a file already carries, in page order; [] if none,
+    or if the file can't be read."""
+    try:
+        with load_any(path) as doc:
+            if doc.needs_pass:
+                return []
+            out = []
+            for page in doc:
+                for a in page.annots(types=[fitz.PDF_ANNOT_STAMP]):
+                    params = label_params(doc, a.xref) if is_label(a) else None
+                    if params:
+                        out.append(params["designation"])
+            return out
+    except Exception:
+        return []
+
+
+def corner_rect(page, params, position, margin):
+    """The visible rect of a new label in a corner (one of dialogs.POSITIONS) of the page."""
+    w, h = label_size(params)
+    W, H = page.rect.width, page.rect.height
+    vert, horiz = position.split()
+    x = {"left": margin, "center": (W - w) / 2, "right": W - margin - w}[horiz]
+    y = margin if vert == "Top" else H - margin - h
+    return clamp(fitz.Rect(x, y, x + w, y + h), fitz.Rect(0, 0, W, H))
+
+
+def label_file(src, dst, params, position, margin):
+    """Label one file into dst (a path to write): a label it already has is changed to
+    params in place; otherwise one goes in the given corner of the first page. Returns
+    True if the file was already labelled."""
+    doc = load_any(src)
+    had = False
+    for page in doc:
+        for a in list(page.annots(types=[fitz.PDF_ANNOT_STAMP])):
+            if is_label(a):
+                update_label(page, a.xref, params)
+                had = True
+    if not had and doc.page_count:
+        page = doc[0]
+        add_label(page, corner_rect(page, params, position, margin), params)
+    doc.save(dst, garbage=3, deflate=True)
+    doc.close()
+    return had
+
+
+def label_files(files, targets, params, position, margin, in_place=False, progress=None):
+    """Label files in order into targets (one path per file), each numbered on from the
+    one before, starting at params["designation"]. With in_place, the files themselves
+    are replaced (and renamed) rather than copied. Every file is written to a temporary
+    name first and nothing is replaced until all have succeeded, so a failure midway
+    leaves the files as they were. Returns [(target, designation, was already labelled)]."""
+    temps, done, designation = [], [], params["designation"]
+    try:
+        for k, (src, dst) in enumerate(zip(files, targets)):
+            if progress:
+                progress(k, src)
+            os.makedirs(os.path.dirname(dst) or ".", exist_ok=True)
+            tmp = dst + ".kosmicpdf-tmp"
+            had = label_file(src, tmp, dict(params, designation=designation), position, margin)
+            temps.append(tmp)
+            done.append((dst, designation, had))
+            designation = next_designation(designation)
+    except Exception:
+        for tmp in temps:
+            if os.path.exists(tmp):
+                os.remove(tmp)
+        raise
+    if in_place:
+        kept = {os.path.realpath(t) for t in targets}
+        for src in files:
+            if os.path.realpath(src) not in kept and os.path.exists(src):
+                os.remove(src)
+    for tmp, dst in zip(temps, targets):
+        os.replace(tmp, dst)
+    return done
+
+
+class LabelFilesDialog(QDialog):
+    """Label a set of files, in an order the user sets, into copies named
+    "Exhibit 3 - Contract.pdf", or the files themselves, renamed. Files already labelled
+    are renumbered, so the whole set can be reordered and run again."""
+
+    def __init__(self, parent, files=(), settings=None):
+        super().__init__(parent)
+        self.settings = settings if settings is not None else app_settings()
+        self.setWindowTitle("Label Exhibit Files")
+        self.resize(760, 720)
+        self._existing = {}
+        self.list = FileList(PDFS_AND_IMAGES, label=self._label)
+        self.fields = LabelFields(remembered(self.settings), self.settings, designation_label="Start at")
+        self.position = QComboBox()
+        self.position.addItems(POSITIONS)
+        self.position.setCurrentText(self.settings.value("label_files/position", "Bottom right"))
+        self.margin = QDoubleSpinBox(minimum=0, maximum=144, value=float(self.settings.value("label_files/margin", DEFAULT_MARGIN)),
+                                     suffix=" pt")
+        self.margin.setToolTip("From the page's edge, for a label that is being added")
+        position_row = QHBoxLayout()
+        position_row.addWidget(self.position, 1)
+        position_row.addWidget(QLabel("Margin"))
+        position_row.addWidget(self.margin)
+        self.naming = QComboBox()
+        for key, text in NAMINGS.items():
+            self.naming.addItem(text, key)
+        self.naming.setCurrentIndex(max(0, self.naming.findData(self.settings.value("label_files/naming", "exhibit"))))
+        self.copies = QRadioButton("Labelled copies, saved in")
+        self.in_place = QRadioButton("The files themselves, labelled and renamed where they are")
+        (self.in_place if self.settings.value("label_files/in_place", "false") == "true" else self.copies).setChecked(True)
+        self.folder = QLineEdit()
+        browse = QPushButton("Choose…", clicked=self._choose_folder)
+        folder_row = QHBoxLayout()
+        folder_row.addWidget(self.copies)
+        folder_row.addWidget(self.folder, 1)
+        folder_row.addWidget(browse)
+        self.example = QLabel()
+        self.example.setForegroundRole(QPalette.PlaceholderText)
+        form = self.fields.form
+        form.addRow("Position", position_row)
+        form.addRow("File names", self.naming)
+        form.addRow("", self.example)
+        form.addRow("Write", folder_row)
+        form.addRow("", self.in_place)
+        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        buttons.button(QDialogButtonBox.Ok).setText("Label Files")
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        lay = QVBoxLayout(self)
+        lay.addWidget(QLabel("Drag to set the order: the numbering runs top to bottom. Delete takes the selected files "
+                             "out.\nA file that already carries a label is renumbered rather than given a second one, "
+                             "so to renumber a set, put the files in their new order and label them again."))
+        lay.addWidget(self.list, 1)
+        lay.addWidget(self.fields)
+        lay.addWidget(buttons)
+        self.list.changed.connect(self._update)
+        self.fields.changed.connect(self.list.relabel)
+        self.fields.changed.connect(self._update)
+        self.naming.currentIndexChanged.connect(self._update)
+        self.copies.toggled.connect(self._update)
+        self.list.add(list(files))
+        self._update()
+
+    def _existing_of(self, f):
+        if f not in self._existing:
+            self._existing[f] = file_labels(f)
+        return self._existing[f]
+
+    def designations(self):
+        """[(file, designation)] in the list's order."""
+        out, d = [], self.fields.params()["designation"]
+        for f in self.list.files():
+            out.append((f, d))
+            d = next_designation(d)
+        return out
+
+    def targets(self):
+        naming, folder = self.naming_key(), self.folder.text()
+        return [os.path.join(os.path.dirname(f) if self.in_place.isChecked() else folder, exhibit_name(f, d, naming))
+                for f, d in self.designations()]
+
+    def _label(self, f):
+        for (path, d), target in zip(self.designations(), self.targets()):
+            if path == f:
+                name = os.path.basename(target)
+                old = self._existing_of(f)
+                if old and old != [d] * len(old):
+                    note = f"    (now labelled {', '.join(old)})"
+                elif not old:
+                    note = "    (no label yet)"
+                else:
+                    note = ""
+                return name + ("" if name == os.path.basename(f) else f"    was {os.path.basename(f)}") + note
+        return os.path.basename(f)
+
+    def _update(self, *_):
+        files = self.list.files()
+        if files and not self.folder.text():
+            self.folder.setText(os.path.join(os.path.dirname(files[0]), "Exhibits"))
+        self.folder.setEnabled(self.copies.isChecked())
+        d = self.fields.params()["designation"]
+        self.example.setText("e.g. " + exhibit_name(files[0] if files else "Contract.pdf", d, self.naming_key()))
+        self.list.relabel()
+
+    def _choose_folder(self):
+        d = QFileDialog.getExistingDirectory(self, "Save the labelled copies in", self.folder.text()
+                                             or self.settings.value("last_dir", os.path.expanduser("~")))
+        if d:
+            self.folder.setText(d)
+
+    def naming_key(self):
+        return self.naming.currentData()
+
+    def problem(self):
+        """Why the files can't be labelled as set up, or None."""
+        files = self.list.files()
+        if not files:
+            return "Add the files to label first."
+        if not self.fields.params()["designation"]:
+            return "Give the first file its number or letter (Start at)."
+        sources = {os.path.realpath(f) for f in files}
+        targets = [os.path.realpath(t) for t in self.targets()]
+        if len(set(targets)) < len(targets):
+            return "Two files would get the same name. Rename one of them first."
+        if self.in_place.isChecked():
+            clash = [t for t in targets if os.path.exists(t) and t not in sources]
+            if clash:
+                return ("That would replace a file that isn't in the list:\n" + "\n".join(os.path.basename(t) for t in clash[:8]))
+            return None
+        if not self.folder.text().strip():
+            return "Choose a folder for the labelled copies."
+        if sources & set(targets):
+            return "That would save over an original file. Choose another folder, or label the files where they are."
+        return None
+
+    def accept(self):
+        problem = self.problem()
+        if problem:
+            QMessageBox.information(self, "Label Exhibit Files", problem)
+            return
+        if self.copies.isChecked():
+            existing = [t for t in self.targets() if os.path.exists(t)]
+            if existing:
+                names = "\n".join(os.path.basename(t) for t in existing[:8]) + ("\n…" if len(existing) > 8 else "")
+                r = QMessageBox.question(self, "Label Exhibit Files",
+                                         f"{len(existing)} of the labelled copies are already in that folder:\n\n{names}"
+                                         "\n\nReplace them?", QMessageBox.Yes | QMessageBox.Cancel)
+                if r != QMessageBox.Yes:
+                    return
+        s = self.settings
+        s.setValue("label_files/position", self.position.currentText())
+        s.setValue("label_files/margin", self.margin.value())
+        s.setValue("label_files/naming", self.naming_key())
+        s.setValue("label_files/in_place", "true" if self.in_place.isChecked() else "false")
+        super().accept()

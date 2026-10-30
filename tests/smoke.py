@@ -1164,6 +1164,105 @@ v.go_to_page(0); pump(100)
 w.grab().save(os.path.join(OUT, "05-label.png"))
 w.set_mode("select")
 
+# --- Label Exhibit Files: a set of files labelled in order, and renumbered on the fly --------------------------
+check("Label Exhibit Files sits in the Tools menu after Bates Number Files",
+      "label_files" in w.actions_by_name and w.actions_by_name["label_files"] in
+      [a for m in w.main_menu.actions() for a in (m.menu().actions() if m.menu() else [])])
+check("file names get the designation, replacing one they already carry, and leave dates alone",
+      labels.exhibit_name("/x/Contract.pdf", "3") == "Exhibit 3 - Contract.pdf"
+      and labels.exhibit_name("/x/Exhibit 7 - Contract.pdf", "3") == "Exhibit 3 - Contract.pdf"
+      and labels.exhibit_name("/x/B - Memo.pdf", "A") == "Exhibit A - Memo.pdf"
+      and labels.exhibit_name("/x/2024-01-05 - Letter.pdf", "2") == "Exhibit 2 - 2024-01-05 - Letter.pdf"
+      and labels.exhibit_name("/x/scan.png", "2", "keep") == "scan.pdf")
+lbl_dir = os.path.join(work, "lbl")
+os.makedirs(lbl_dir, exist_ok=True)
+contract, letter = os.path.join(lbl_dir, "Contract.pdf"), os.path.join(lbl_dir, "Letter.pdf")
+shutil.copy(os.path.join(SAMPLES, "sample.pdf"), contract); shutil.copy(os.path.join(SAMPLES, "second.pdf"), letter)
+lf = labels.LabelFilesDialog(w)
+lf.fields.designation.setText("1"); lf.fields.caption.setCurrentText("Plaintiff Exhibit")
+lf.list.add([contract, letter]); pump()
+lrows = lambda: [lf.list.list.item(k).text() for k in range(lf.list.list.count())]  # noqa: E731
+check("each file shows the name it will get, and that it has no label yet",
+      lrows() == ["Exhibit 1 - Contract.pdf    was Contract.pdf    (no label yet)",
+                  "Exhibit 2 - Letter.pdf    was Letter.pdf    (no label yet)"], str(lrows()))
+check("the copies go to an Exhibits folder beside the first file by default, and the example shows the first name",
+      lf.folder.text() == os.path.join(lbl_dir, "Exhibits") and lf.example.text() == "e.g. Exhibit 1 - Contract.pdf"
+      and lf.copies.isChecked() and lf.problem() is None, lf.example.text())
+lf.list.list.item(1).setSelected(True); lf.list._move(-1)
+check("moving a file up renumbers both", lrows()[0].startswith("Exhibit 1 - Letter.pdf") and lrows()[1].startswith("Exhibit 2 - Contract.pdf"), str(lrows()))
+lf.folder.setText(lbl_dir); lf.naming.setCurrentIndex(lf.naming.findData("keep"))
+check("it won't save over an original", "original" in (lf.problem() or ""), str(lf.problem()))
+lf.naming.setCurrentIndex(lf.naming.findData("exhibit")); lf.folder.setText(os.path.join(lbl_dir, "Exhibits"))
+done = labels.label_files(lf.list.files(), lf.targets(), lf.fields.params(), "Bottom right", 18.0)
+ex_letter, ex_contract = os.path.join(lbl_dir, "Exhibits", "Exhibit 1 - Letter.pdf"), os.path.join(lbl_dir, "Exhibits", "Exhibit 2 - Contract.pdf")
+check("labelled copies are named Exhibit N - name, in order",
+      [d for d, _, _ in done] == [ex_letter, ex_contract] and [n for _, n, _ in done] == ["1", "2"]
+      and not any(had for _, _, had in done) and sorted(os.listdir(os.path.join(lbl_dir, "Exhibits"))) == ["Exhibit 1 - Letter.pdf", "Exhibit 2 - Contract.pdf"])
+with fitz.open(ex_contract) as d:
+    pg = d[0]
+    page_w, page_h = pg.rect.width, pg.rect.height
+    first_page_labels = [a for a in pg.annots() if labels.is_label(a)]
+    lrect = fitz.Rect(first_page_labels[0].rect) if first_page_labels else None
+    lcaption = labels.label_params(d, first_page_labels[0].xref)["caption"] if first_page_labels else None
+    others = sum(1 for p_ in list(d)[1:] for a in p_.annots() if labels.is_label(a))
+check("each copy gets one label, bottom right of its first page, 18pt in from the edges",
+      len(first_page_labels) == 1 and others == 0 and lrect and abs(page_w - lrect.x1 - 18) < 0.5
+      and abs(page_h - lrect.y1 - 18) < 0.5, str(lrect))
+check("the labels carry the caption and number", labels.file_labels(ex_contract) == ["2"] and labels.file_labels(ex_letter) == ["1"]
+      and lcaption == "Plaintiff Exhibit")
+check("the originals are untouched", labels.file_labels(contract) == [] and os.path.exists(contract))
+lf.deleteLater()
+# renumber the set in place, in the other order, with another colour: names and stickers change together
+lf2 = labels.LabelFilesDialog(w)
+lf2.fields.designation.setText("1"); lf2.fields._set_color(labels.COLORS["Green"])
+lf2.list.add([ex_contract, ex_letter]); lf2.in_place.setChecked(True); pump()
+l2rows = lambda: [lf2.list.list.item(k).text() for k in range(lf2.list.list.count())]  # noqa: E731
+check("already-labelled files show their new name, old name and present number",
+      l2rows() == ["Exhibit 1 - Contract.pdf    was Exhibit 2 - Contract.pdf    (now labelled 2)",
+                   "Exhibit 2 - Letter.pdf    was Exhibit 1 - Letter.pdf    (now labelled 1)"] and lf2.problem() is None, str(l2rows()))
+check("in place, the new names stay in each file's own folder and the folder box is off",
+      [os.path.dirname(t) for t in lf2.targets()] == [os.path.join(lbl_dir, "Exhibits")] * 2 and not lf2.folder.isEnabled())
+done2 = labels.label_files(lf2.list.files(), lf2.targets(), lf2.fields.params(), "Top left", 18.0, in_place=True)
+new_contract, new_letter = os.path.join(lbl_dir, "Exhibits", "Exhibit 1 - Contract.pdf"), os.path.join(lbl_dir, "Exhibits", "Exhibit 2 - Letter.pdf")
+check("renumbering in place renames the files, with the old names gone",
+      sorted(os.listdir(os.path.join(lbl_dir, "Exhibits"))) == ["Exhibit 1 - Contract.pdf", "Exhibit 2 - Letter.pdf"]
+      and all(had for _, _, had in done2), str(os.listdir(os.path.join(lbl_dir, "Exhibits"))))
+with fitz.open(new_contract) as d:
+    pg = d[0]                                     # annotations live only as long as their page
+    relabelled = [a for a in pg.annots() if labels.is_label(a)]
+    rrect = fitz.Rect(relabelled[0].rect) if relabelled else None
+    rparams = labels.label_params(d, relabelled[0].xref) if relabelled else {}
+check("…and renumbers the sticker in each, in its old place, with the new colour, rather than adding a second",
+      labels.file_labels(new_contract) == ["1"] and labels.file_labels(new_letter) == ["2"] and len(relabelled) == 1
+      and rrect == lrect and rparams.get("color") == labels.COLORS["Green"], f"{rrect} {lrect} {rparams}")
+lf2.deleteLater()
+# the whole command from the menu, on a file open in a tab
+w.open_files([new_letter]); pump()
+open_tab = next(t_ for t_ in w.doc_tabs() if t_.pdoc.path == new_letter)
+real_lf_exec, real_box_exec = labels.LabelFilesDialog.exec, QMessageBox.exec
+
+
+def fill_in_labels(dlg):
+    dlg.list.add([new_letter, new_contract]); dlg.fields.designation.setText("A"); dlg.in_place.setChecked(True)
+    return True
+
+
+labels.LabelFilesDialog.exec = fill_in_labels
+QMessageBox.exec = lambda self: 0
+try:
+    w.label_files()
+finally:
+    labels.LabelFilesDialog.exec, QMessageBox.exec = real_lf_exec, real_box_exec
+pump()
+a_letter = os.path.join(lbl_dir, "Exhibits", "Exhibit A - Letter.pdf")
+check("Label Exhibit Files renumbers from the menu, reopens the file that was in a tab at its new name, and moves the next label on to C",
+      sorted(os.listdir(os.path.join(lbl_dir, "Exhibits"))) == ["Exhibit A - Letter.pdf", "Exhibit B - Contract.pdf"]
+      and labels.file_labels(a_letter) == ["A"] and open_tab not in w.doc_tabs()
+      and any(t_.pdoc.path == a_letter for t_ in w.doc_tabs()) and labels.remembered(dialogs.settings())["designation"] == "C",
+      str(os.listdir(os.path.join(lbl_dir, "Exhibits"))))
+w.close_tab(next(t_ for t_ in w.doc_tabs() if t_.pdoc.path == a_letter)); pump()
+w.tabs.setCurrentWidget(t); pump()
+
 # --- page number field ----------------------------------------------------------------------------------------
 w.tabs.setCurrentWidget(t); pump()
 w.page_box.setText("4")
