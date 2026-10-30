@@ -36,10 +36,10 @@ COLORS = OrderedDict([
     ("Green", "#dde8cb"), ("Blue", "#cfe0ff"), ("Purple", "#dedce6"), ("Beige", "#ddd8c3"),
     ("Grey", "#e2e2e2"), ("White", "#ffffff"),
 ])
-SIZES = OrderedDict([("Small", (1.25, 0.75)), ("Standard", (1.5, 0.875))])   # inches
+SIZES = OrderedDict([("Small", (1.0, 0.625)), ("Standard", (1.25, 0.75)), ("Large", (1.5, 0.875))])   # inches
 CAPTIONS = ["Exhibit", "Plaintiff Exhibit", "Defendant Exhibit", "Deposition Exhibit", "Joint Exhibit",
             "Petitioner Exhibit", "Respondent Exhibit", "State Exhibit", "Trial Exhibit"]
-DEFAULTS = {"caption": "Exhibit", "designation": "1", "color": COLORS["Yellow"], "width": 1.5, "height": 0.875}
+DEFAULTS = {"caption": "Exhibit", "designation": "1", "color": COLORS["Yellow"], "width": 1.25, "height": 0.75}
 PRESETS_KEY = "label/presets"      # the user's saved presets, as JSON: [{name, caption, color, width, height}]
 BORDER = 2.0                        # pt
 CORNER = 0.09                       # corner radius, as a share of the label's height
@@ -115,14 +115,15 @@ def appearance(params):
     w, h = label_size(params)
     fill = _rgb(params["color"])
     tc = text_color(params["color"])
-    pad = 0.08 * h
+    pad = 0.08 * h                                 # below the number
+    caption_pad = 0.12 * h                         # above the caption, and either side of it
     out = [f"{fill[0]:.3f} {fill[1]:.3f} {fill[2]:.3f} rg 0 G {BORDER} w 1 j",
            rounded_rect_path(BORDER / 2, BORDER / 2, w - BORDER / 2, h - BORDER / 2, CORNER * h) + " B",
            f"{tc[0]} {tc[1]} {tc[2]} rg"]
-    top = h - pad                                  # where the next line of text may start
+    top = h - caption_pad                          # where the next line of text may start
     caption = params["caption"].strip()
     if caption:
-        cs = _fit(caption, w - 2 * pad, 0.2 * h)
+        cs = _fit(caption, w - 2 * caption_pad, 0.2 * h)
         baseline = top - CAP_HEIGHT * cs
         x = (w - fitz.get_text_length(caption, FONT, cs)) / 2
         out.append(f"BT /HeBo {cs:.2f} Tf 1 0 0 1 {x:.2f} {baseline:.2f} Tm {_pdf_string(caption)} Tj ET")
@@ -131,7 +132,7 @@ def appearance(params):
     if designation:
         avail = top - pad
         glyph = CAP_HEIGHT + (DESCENDER if DESCENDING & set(designation) else 0)
-        ds = _fit(designation, w - 2 * pad, avail * 0.62 / glyph)      # large, but not filling the box
+        ds = _fit(designation, w - 2 * pad, avail * 0.52 / glyph)      # large, but not filling the box
         baseline = pad + (avail - glyph * ds) / 2 + (DESCENDER * ds if glyph > CAP_HEIGHT else 0)
         x = (w - fitz.get_text_length(designation, FONT, ds)) / 2
         out.append(f"BT /HeBo {ds:.2f} Tf 1 0 0 1 {x:.2f} {baseline:.2f} Tm {_pdf_string(designation)} Tj ET")
@@ -341,7 +342,7 @@ class LabelDialog(QDialog):
             self.size.addItem(size_text(w, h), (w, h))
         self.preview = QLabel()
         self.preview.setAlignment(Qt.AlignCenter)
-        self.preview.setMinimumHeight(int(SIZES["Standard"][1] * 72) + 8)
+        self.preview.setMinimumHeight(int(SIZES["Large"][1] * 72) + 8)
         form = QFormLayout()
         form.addRow("Preset", preset_row)
         form.addRow("Caption", self.caption)
@@ -464,6 +465,6 @@ class LabelDialog(QDialog):
         p = self.params()
         dpr = self.devicePixelRatioF()
         self.preview.setPixmap(label_pixmap(p, 1.0, dpr))
-        self.preview.setMinimumSize(QSize(int(p["width"] * 72) + 8, int(SIZES["Standard"][1] * 72) + 8))
+        self.preview.setMinimumSize(QSize(int(p["width"] * 72) + 8, int(SIZES["Large"][1] * 72) + 8))
         if self.preset.count():
             self._match_preset()
