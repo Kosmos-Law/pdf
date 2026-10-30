@@ -18,6 +18,7 @@
       <li>Open several PDFs in tabs, and drag tabs into windows of their own</li>
       <li>Highlight, type notes onto pages, and select and copy text</li>
       <li>Redact text and areas permanently, and stamp Bates numbers</li>
+      <li>Place exhibit labels on pages, and label and renumber a set of exhibit files at once</li>
       <li>Make scanned PDFs searchable with OCR, and convert to PDF/A</li>
       <li>Combine files, turn images into PDFs, and flatten annotations</li>
     </ul>
@@ -34,6 +35,15 @@
     <color type="primary" scheme_preference="dark">#2e3440</color>
   </branding>
   <releases>
+    <release version="0.3.0" date="2026-10-30">
+      <description>
+        <p>Exhibit labels. The Exhibit Label tool (L) places a labelled sticker on the page: choose a caption such as "Plaintiff Exhibit", the number or letter, a pale background colour and a size, watch the label follow the pointer, and click to place it. Labels can be dragged to a new spot, edited with a double-click, and removed with their corner button; the next label offers the next number or letter. Save your own label presets (caption, colour and size), and they stay available across files.</p>
+        <ul>
+          <li>Label Exhibit Files (Tools menu): pick a set of PDFs, drag them into order, and label each on its first page with consecutive numbers, into copies named "Exhibit 3 - name.pdf" or in place.</li>
+          <li>Renumbering: run Label Exhibit Files again on labelled exhibits, in a new order, and the labels and file names all update together.</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.2.1" date="2026-10-29">
       <description>
         <p>The menus are now behind a menu button at the right of the toolbar (or F10), leaving more room for pages; every keyboard shortcut works as before. Number boxes, such as the typewriter font size, keep their text off the left edge. Opening a document no longer shows a busy cursor over the window, which already says what it's opening.</p>
