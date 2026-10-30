@@ -3,10 +3,13 @@ a caption across the top ("PLAINTIFF'S EXHIBIT") and the exhibit's number or let
 beneath it.
 
 A label is a Stamp annotation whose appearance Kosmic PDF draws itself, as vector content
-(a filled box, a hairline border, and Helvetica Bold text sized to fit), so it is crisp at
-any zoom, prints, flattens, and looks the same in every PDF viewer. Its caption, number,
-colour and size are kept in the annotation (``/KosmicPDFLabel``), so the label can be
-edited later and redrawn.
+(a filled box with rounded corners and a black border, and Helvetica Bold text sized to
+fit), so it is crisp at any zoom, prints, flattens, and looks the same in every PDF
+viewer. Its caption, number, colour and size are kept in the annotation
+(``/KosmicPDFLabel``), so the label can be edited later and redrawn.
+
+Presets (a caption, colour and size under a name) are the user's own, kept in the
+settings, so they carry across files.
 
 MuPDF redraws a Stamp annotation in its own style (a red "Approved") whenever one of its
 properties is changed through the annotation API, which would throw the label away. So
@@ -20,22 +23,27 @@ from collections import OrderedDict
 import pymupdf as fitz
 from PySide6.QtCore import QSize, Qt
 from PySide6.QtGui import QColor, QImage, QPixmap
-from PySide6.QtWidgets import (QComboBox, QDialog, QDialogButtonBox, QColorDialog, QFormLayout, QLabel,
-                               QLineEdit, QVBoxLayout)
+from PySide6.QtWidgets import (QComboBox, QDialog, QDialogButtonBox, QColorDialog, QFormLayout, QHBoxLayout,
+                               QInputDialog, QLabel, QLineEdit, QMessageBox, QPushButton, QVBoxLayout)
 
 LABEL_NAME = "KosmicPDFExhibitLabel"   # the stamp's /Name, which marks it as one of ours
 LABEL_KEY = "KosmicPDFLabel"            # the annotation key holding the label's settings, as JSON
 
-# Sticker colours, as sold for exhibit labels, in the order they are offered.
+# Label colours: pale, like the firm's highlight colours (pageview.HIGHLIGHT_COLORS), so the
+# black text and border stand out and the page beneath isn't shouted down.
 COLORS = OrderedDict([
-    ("Yellow", "#ffe94d"), ("Orange", "#ffa94d"), ("Red", "#f0625f"), ("Pink", "#ff8fc8"),
-    ("Green", "#7ad67a"), ("Blue", "#6fa8ff"), ("Light Blue", "#aed9ff"), ("Purple", "#b48bff"),
-    ("Grey", "#d9d9d9"), ("White", "#ffffff"),
+    ("Yellow", "#ffffa6"), ("Orange", "#ffdcaa"), ("Red", "#ffc2bd"), ("Pink", "#ffd3e8"),
+    ("Green", "#dde8cb"), ("Blue", "#cfe0ff"), ("Purple", "#dedce6"), ("Beige", "#ddd8c3"),
+    ("Grey", "#e2e2e2"), ("White", "#ffffff"),
 ])
-SIZES = OrderedDict([("Small", (1.5, 0.875)), ("Standard", (1.75, 1.0)), ("Large", (2.25, 1.25))])   # inches
-CAPTIONS = ["EXHIBIT", "PLAINTIFF'S EXHIBIT", "DEFENDANT'S EXHIBIT", "DEPOSITION EXHIBIT", "JOINT EXHIBIT",
-            "PETITIONER'S EXHIBIT", "RESPONDENT'S EXHIBIT", "STATE'S EXHIBIT", "TRIAL EXHIBIT"]
-DEFAULTS = {"caption": "EXHIBIT", "designation": "1", "color": COLORS["Yellow"], "width": 1.75, "height": 1.0}
+SIZES = OrderedDict([("Small", (1.25, 0.75)), ("Standard", (1.5, 0.875))])   # inches
+CAPTIONS = ["Exhibit", "Plaintiff's Exhibit", "Defendant's Exhibit", "Deposition Exhibit", "Joint Exhibit",
+            "Petitioner's Exhibit", "Respondent's Exhibit", "State's Exhibit", "Trial Exhibit"]
+DEFAULTS = {"caption": "Exhibit", "designation": "1", "color": COLORS["Yellow"], "width": 1.5, "height": 0.875}
+PRESETS_KEY = "label/presets"      # the user's saved presets, as JSON: [{name, caption, color, width, height}]
+BORDER = 1.0                        # pt
+CORNER = 0.09                       # corner radius, as a share of the label's height
+KAPPA = 0.5523                      # Bézier handle length for a quarter circle, as a share of the radius
 GHOST_OPACITY = 0.65     # of the label shown under the cursor while choosing where it goes
 
 FONT = "hebo"            # Helvetica Bold, one of the PDF base fonts: no embedding needed
@@ -91,21 +99,30 @@ def _fit(text, max_width, max_size):
     return min(max_size, max_width / per_pt) if per_pt > 0 else max_size
 
 
+def rounded_rect_path(x0, y0, x1, y1, r):
+    """PDF path operators for a rectangle with corners rounded to radius r."""
+    k = KAPPA * r
+    return (f"{x0 + r:.2f} {y0:.2f} m {x1 - r:.2f} {y0:.2f} l "
+            f"{x1 - r + k:.2f} {y0:.2f} {x1:.2f} {y0 + r - k:.2f} {x1:.2f} {y0 + r:.2f} c "
+            f"{x1:.2f} {y1 - r:.2f} l {x1:.2f} {y1 - r + k:.2f} {x1 - r + k:.2f} {y1:.2f} {x1 - r:.2f} {y1:.2f} c "
+            f"{x0 + r:.2f} {y1:.2f} l {x0 + r - k:.2f} {y1:.2f} {x0:.2f} {y1 - r + k:.2f} {x0:.2f} {y1 - r:.2f} c "
+            f"{x0:.2f} {y0 + r:.2f} l {x0:.2f} {y0 + r - k:.2f} {x0 + r - k:.2f} {y0:.2f} {x0 + r:.2f} {y0:.2f} c h")
+
+
 def appearance(params):
     """The label's appearance as a PDF content stream (bytes), drawn in a box of
     label_size(params) with its origin at the bottom left, as PDF content is."""
     w, h = label_size(params)
     fill = _rgb(params["color"])
-    border = tuple(v * 0.55 for v in fill)        # a darker shade of the fill
     tc = text_color(params["color"])
-    pad = 0.07 * h
-    out = [f"{fill[0]:.3f} {fill[1]:.3f} {fill[2]:.3f} rg {border[0]:.3f} {border[1]:.3f} {border[2]:.3f} RG 1 w",
-           f"0.5 0.5 {w - 1:.2f} {h - 1:.2f} re B",
+    pad = 0.08 * h
+    out = [f"{fill[0]:.3f} {fill[1]:.3f} {fill[2]:.3f} rg 0 G {BORDER} w 1 j",
+           rounded_rect_path(BORDER / 2, BORDER / 2, w - BORDER / 2, h - BORDER / 2, CORNER * h) + " B",
            f"{tc[0]} {tc[1]} {tc[2]} rg"]
     top = h - pad                                  # where the next line of text may start
     caption = params["caption"].strip()
     if caption:
-        cs = _fit(caption, w - 2 * pad, 0.19 * h)
+        cs = _fit(caption, w - 2 * pad, 0.2 * h)
         baseline = top - CAP_HEIGHT * cs
         x = (w - fitz.get_text_length(caption, FONT, cs)) / 2
         out.append(f"BT /HeBo {cs:.2f} Tf 1 0 0 1 {x:.2f} {baseline:.2f} Tm {_pdf_string(caption)} Tj ET")
@@ -114,7 +131,7 @@ def appearance(params):
     if designation:
         avail = top - pad
         glyph = CAP_HEIGHT + (DESCENDER if DESCENDING & set(designation) else 0)
-        ds = _fit(designation, w - 2 * pad, avail * 0.9 / glyph)
+        ds = _fit(designation, w - 2 * pad, avail * 0.62 / glyph)      # large, but not filling the box
         baseline = pad + (avail - glyph * ds) / 2 + (DESCENDER * ds if glyph > CAP_HEIGHT else 0)
         x = (w - fitz.get_text_length(designation, FONT, ds)) / 2
         out.append(f"BT /HeBo {ds:.2f} Tf 1 0 0 1 {x:.2f} {baseline:.2f} Tm {_pdf_string(designation)} Tj ET")
@@ -269,13 +286,47 @@ def remember(settings, params, placed=True):
     settings.setValue("label/designation", next_designation(params["designation"]) if placed else params["designation"])
 
 
+def presets(settings):
+    """The user's saved presets, in the order saved: [{name, caption, color, width, height}]."""
+    try:
+        saved = json.loads(settings.value(PRESETS_KEY, "[]"))
+        return [p for p in saved if isinstance(p, dict) and "name" in p]
+    except ValueError:
+        return []
+
+
+def save_presets(settings, items):
+    settings.setValue(PRESETS_KEY, json.dumps(items))
+
+
+def size_text(w, h):
+    name = next((n for n, wh in SIZES.items() if wh == (w, h)), "Custom")
+    return f'{name}  ({w:g}" × {h:g}")'
+
+
 class LabelDialog(QDialog):
     """Caption, number or letter, colour and size of an exhibit label, with a preview.
-    For a new label, OK means "go and place it"; for an existing one, the changes apply."""
+    For a new label, OK means "go and place it"; for an existing one, the changes apply.
+    A preset (a caption, colour and size under a name) fills the fields in one go; the
+    user can save the fields as one, or remove one, and they carry across files."""
 
-    def __init__(self, parent, params, editing=False):
+    def __init__(self, parent, params, editing=False, settings=None):
         super().__init__(parent)
         self.setWindowTitle("Edit Exhibit Label" if editing else "Exhibit Label")
+        if settings is None:
+            from .dialogs import settings as app_settings
+            settings = app_settings()
+        self.settings = settings
+        self.preset = QComboBox()
+        self.preset.setToolTip("A saved caption, colour and size")
+        self.save_button = QPushButton("Save…")
+        self.save_button.setToolTip("Save the caption, colour and size below as a preset")
+        self.remove_button = QPushButton("Remove")
+        self.remove_button.setToolTip("Remove the chosen preset")
+        preset_row = QHBoxLayout()
+        preset_row.addWidget(self.preset, 1)
+        preset_row.addWidget(self.save_button)
+        preset_row.addWidget(self.remove_button)
         self.caption = QComboBox(editable=True)
         self.caption.addItems(CAPTIONS)
         self.caption.setCurrentText(params["caption"])
@@ -287,11 +338,12 @@ class LabelDialog(QDialog):
         self.color.addItem("Other colour…", "other")
         self.size = QComboBox()
         for name, (w, h) in SIZES.items():
-            self.size.addItem(f'{name}  ({w:g}" × {h:g}")', (w, h))
+            self.size.addItem(size_text(w, h), (w, h))
         self.preview = QLabel()
         self.preview.setAlignment(Qt.AlignCenter)
-        self.preview.setMinimumHeight(int(SIZES["Large"][1] * 72) + 8)
+        self.preview.setMinimumHeight(int(SIZES["Standard"][1] * 72) + 8)
         form = QFormLayout()
+        form.addRow("Preset", preset_row)
         form.addRow("Caption", self.caption)
         form.addRow("Number or letter", self.designation)
         form.addRow("Colour", self.color)
@@ -309,13 +361,69 @@ class LabelDialog(QDialog):
         lay.addWidget(buttons)
         self._set_color(params["color"])
         self._set_size(params["width"], params["height"])
+        self._fill_presets()
         self.caption.currentTextChanged.connect(self._update)
         self.designation.textChanged.connect(self._update)
         self.color.activated.connect(self._color_chosen)
         self.size.currentIndexChanged.connect(self._update)
+        self.preset.activated.connect(self._preset_chosen)
+        self.save_button.clicked.connect(self._save_preset)
+        self.remove_button.clicked.connect(self._remove_preset)
         self.designation.setFocus()
         self.designation.selectAll()
         self._update()
+
+    # --- presets ---
+    def _fill_presets(self):
+        self.preset.clear()
+        items = presets(self.settings)
+        self.preset.addItem("Choose a preset…" if items else "No presets saved yet", None)
+        for item in items:
+            self.preset.addItem(self._swatch(item["color"]), item["name"], item)
+        self._match_preset()
+
+    def _match_preset(self):
+        """Show the preset the fields agree with, if any; otherwise the placeholder."""
+        p = self.params()
+        for i in range(1, self.preset.count()):
+            item = self.preset.itemData(i)
+            if (item["caption"], item["color"], item["width"], item["height"]) == (p["caption"], p["color"], p["width"], p["height"]):
+                self.preset.setCurrentIndex(i)
+                break
+        else:
+            self.preset.setCurrentIndex(0)
+        self.remove_button.setEnabled(self.preset.currentIndex() > 0)
+
+    def _preset_chosen(self, index):
+        item = self.preset.itemData(index)
+        if not item:
+            return
+        self.caption.setCurrentText(item["caption"])
+        self._set_color(item["color"])
+        self._set_size(item["width"], item["height"])
+        self._update()
+
+    def _save_preset(self):
+        p = self.params()
+        current = self.preset.currentData()
+        name, ok = QInputDialog.getText(self, "Save Preset", "Name for this caption, colour and size:",
+                                        text=current["name"] if current else p["caption"])
+        name = name.strip()
+        if not ok or not name:
+            return
+        items = [item for item in presets(self.settings) if item["name"] != name]
+        items.append({"name": name, "caption": p["caption"], "color": p["color"], "width": p["width"], "height": p["height"]})
+        save_presets(self.settings, items)
+        self._fill_presets()
+
+    def _remove_preset(self):
+        current = self.preset.currentData()
+        if not current:
+            return
+        if QMessageBox.question(self, "Remove Preset", f'Remove the preset "{current["name"]}"?') != QMessageBox.Yes:
+            return
+        save_presets(self.settings, [item for item in presets(self.settings) if item["name"] != current["name"]])
+        self._fill_presets()
 
     @staticmethod
     def _swatch(hex_color):
@@ -330,9 +438,10 @@ class LabelDialog(QDialog):
         self.color.setCurrentIndex(i)
 
     def _set_size(self, w, h):
-        i = self.size.findData((w, h))
+        # (findData can't match a tuple, so look by hand.)
+        i = next((n for n in range(self.size.count()) if self.size.itemData(n) == (w, h)), -1)
         if i < 0:
-            self.size.addItem(f'Custom  ({w:g}" × {h:g}")', (w, h))
+            self.size.addItem(size_text(w, h), (w, h))
             i = self.size.count() - 1
         self.size.setCurrentIndex(i)
 
@@ -355,4 +464,6 @@ class LabelDialog(QDialog):
         p = self.params()
         dpr = self.devicePixelRatioF()
         self.preview.setPixmap(label_pixmap(p, 1.0, dpr))
-        self.preview.setMinimumSize(QSize(int(p["width"] * 72) + 8, int(SIZES["Large"][1] * 72) + 8))
+        self.preview.setMinimumSize(QSize(int(p["width"] * 72) + 8, int(SIZES["Standard"][1] * 72) + 8))
+        if self.preset.count():
+            self._match_preset()

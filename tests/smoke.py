@@ -1008,14 +1008,14 @@ check("designations follow on: 3 -> 4, A -> B, Z -> AA, 12-A -> 12-B",
 w.tabs.setCurrentWidget(t); pump()
 v = t.view
 v.go_to_page(0); pump()
-params = dict(labels.DEFAULTS, caption="PLAINTIFF'S EXHIBIT", designation="7", color=labels.COLORS["Blue"])
+params = dict(labels.DEFAULTS, caption="Plaintiff's Exhibit", designation="7", color=labels.COLORS["Blue"])
 w.start_labelling(params)
 check("the label tool is a mode of its own, with the settings handed to the view", w.mode == "label" and v.mode == "label"
       and v.label_params == params)
 pr = v.page_rects[0]
 spot = pr.topLeft() + QPoint(200, 150)
 mouse(v.canvas, "move", spot, Qt.NoButton); pump()
-gw, gh = 1.75 * 72 * v.zoom, 1.0 * 72 * v.zoom
+gw, gh = 1.5 * 72 * v.zoom, 0.875 * 72 * v.zoom
 check("a ghost label follows the mouse, centred on it, at the label's size for this zoom",
       v._ghost is not None and v._ghost[0] == 0 and abs(v._ghost[1].center().x() - spot.x()) < 1.5
       and abs(v._ghost[1].center().y() - spot.y()) < 1.5 and abs(v._ghost[1].width() - gw) < 1.5
@@ -1028,24 +1028,25 @@ mouse(v.canvas, "press", spot); mouse(v.canvas, "release", spot); pump()
 p0 = t.pdoc.doc[0]
 stamps = [a for a in p0.annots() if labels.is_label(a)]
 lr = fitz.Rect(stamps[0].rect) if stamps else None
-check("a click places the label there, as a stamp annotation 1.75 by 1 inch", len(stamps) == 1
-      and abs(lr.width - 126) < 0.5 and abs(lr.height - 72) < 0.5
+check("a click places the label there, as a stamp annotation 1.5 by 0.875 inch (the default)", len(stamps) == 1
+      and abs(lr.width - 108) < 0.5 and abs(lr.height - 63) < 0.5
       and abs(v.to_canvas(0, lr).center().x() - spot.x()) < 1.5 and abs(v.to_canvas(0, lr).center().y() - spot.y()) < 1.5, str(lr))
 check("placing it is one undo step and switches back to Select with the label selected",
       len(t.pdoc._undo) == depth + 1 and w.mode == "select" and v.sel_annot == (0, stamps[0].xref) and v.label_params is None)
 check("it carries its settings, for editing later", labels.label_params(t.pdoc.doc, stamps[0].xref) == params)
 check("the next label is numbered 8, with the same caption and colour",
       labels.remembered(dialogs.settings())["designation"] == "8"
-      and labels.remembered(dialogs.settings())["caption"] == "PLAINTIFF'S EXHIBIT"
+      and labels.remembered(dialogs.settings())["caption"] == "Plaintiff's Exhibit"
       and labels.remembered(dialogs.settings())["color"] == labels.COLORS["Blue"])
 pm = v.render(0).toImage()
 c = v.to_canvas(0, lr)
 dpr = pm.devicePixelRatio()
 inside = pm.pixelColor(round((c.left() + 0.08 * c.width() - pr.left()) * dpr), round((c.top() + 0.6 * c.height() - pr.top()) * dpr))
-check("it renders in its colour", inside.blue() > 200 and inside.red() < 160, inside.name())
+want = QColor(labels.COLORS["Blue"])
+check("it renders in its colour", all(abs(a - b) < 8 for a, b in zip(inside.getRgb()[:3], want.getRgb()[:3])), inside.name())
 ap_xref = int(t.pdoc.doc.xref_get_key(stamps[0].xref, "AP/N")[1].split()[0])
 check("its appearance is Kosmic PDF's own vector drawing", b"HeBo" in t.pdoc.doc.xref_stream(ap_xref)
-      and b"PLAINTIFF'S EXHIBIT" in t.pdoc.doc.xref_stream(ap_xref))
+      and b"Plaintiff's Exhibit" in t.pdoc.doc.xref_stream(ap_xref))
 # drag it
 cc = c.center().toPoint()
 mouse(v.canvas, "press", cc); mouse(v.canvas, "move", cc + QPoint(40, 25)); mouse(v.canvas, "release", cc + QPoint(40, 25)); pump()
@@ -1103,8 +1104,8 @@ p2 = t.pdoc.doc[2]
 rot_label = [a for a in p2.annots() if labels.is_label(a)][0]
 vis = rot_label.rect * p2.rotation_matrix
 mat = t.pdoc.doc.xref_get_key(int(t.pdoc.doc.xref_get_key(rot_label.xref, "AP/N")[1].split()[0]), "Matrix")[1].strip("[]")
-check("on a page rotated 90, the label is 1.75 by 1 inch as seen and its drawing is turned to match",
-      p2.rotation == 90 and abs(vis.width - 126) < 0.5 and abs(vis.height - 72) < 0.5 and mat.split() == ["0", "1", "-1", "0", "0", "0"],
+check("on a page rotated 90, the label is 1.5 by 0.875 inch as seen and its drawing is turned to match",
+      p2.rotation == 90 and abs(vis.width - 108) < 0.5 and abs(vis.height - 63) < 0.5 and mat.split() == ["0", "1", "-1", "0", "0", "0"],
       f"{vis} {mat}")
 centre_before = (vis.tl + vis.br) / 2 * p2.derotation_matrix
 t.pdoc.rotate([2], 90); pump()
@@ -1114,7 +1115,7 @@ vis2 = rot_label.rect * p2.rotation_matrix
 mat2 = t.pdoc.doc.xref_get_key(int(t.pdoc.doc.xref_get_key(rot_label.xref, "AP/N")[1].split()[0]), "Matrix")[1].strip("[]")
 centre_after = (vis2.tl + vis2.br) / 2 * p2.derotation_matrix
 check("rotating the page turns the label upright again, centred where it was",
-      p2.rotation == 180 and abs(vis2.width - 126) < 0.5 and abs(vis2.height - 72) < 0.5 and mat2.split() == ["-1", "0", "0", "-1", "0", "0"]
+      p2.rotation == 180 and abs(vis2.width - 108) < 0.5 and abs(vis2.height - 63) < 0.5 and mat2.split() == ["-1", "0", "0", "-1", "0", "0"]
       and abs(centre_after - centre_before) < 1, f"{vis2} {mat2} {centre_before} {centre_after}")
 t.pdoc.undo(); pump()
 # Esc stops placing
@@ -1127,7 +1128,36 @@ check("Esc while placing goes back to Select without placing", w.mode == "select
 dlg = labels.LabelDialog(w, labels.remembered(dialogs.settings()))
 check("the label dialog offers the number last chosen, with a live preview",
       dlg.designation.text() == "7" and dlg.preview.pixmap() is not None and not dlg.preview.pixmap().isNull()
-      and dlg.params()["caption"] == "PLAINTIFF'S EXHIBIT")
+      and dlg.params()["caption"] == "Plaintiff's Exhibit")
+check("the sizes offered are Small and Standard, Standard being the default",
+      [dlg.size.itemText(i).split()[0] for i in range(dlg.size.count())] == ["Small", "Standard"]
+      and labels.DEFAULTS["width"] == 1.5 and labels.SIZES["Standard"] == (1.5, 0.875))
+check("the preset captions are in title case and the colours pale, like the highlighters",
+      labels.CAPTIONS[:2] == ["Exhibit", "Plaintiff's Exhibit"] and labels.COLORS["Yellow"] == "#ffffa6"
+      and all(QColor(c).lightness() > 190 for c in labels.COLORS.values()))
+check("the rounded black border is drawn in the label", b"0 G 1.0 w" in t.pdoc.doc.xref_stream(ap_xref)
+      and b" c " in t.pdoc.doc.xref_stream(ap_xref))
+# presets: save, choose, remove; they live in the settings, so they carry across files
+from PySide6.QtWidgets import QInputDialog  # noqa: E402
+check("no presets to begin with", dlg.preset.count() == 1 and not dlg.remove_button.isEnabled())
+dlg.color.setCurrentIndex(dlg.color.findData(labels.COLORS["Green"])); dlg.size.setCurrentIndex(0); dlg._update()
+QInputDialog.getText = staticmethod(lambda *a, **k: ("Green Plaintiff", True))
+dlg.save_button.click(); pump()
+saved = labels.presets(dialogs.settings())
+check("Save… keeps the caption, colour and size under a name, and the dialog shows it chosen",
+      saved == [{"name": "Green Plaintiff", "caption": "Plaintiff's Exhibit", "color": labels.COLORS["Green"],
+                 "width": 1.25, "height": 0.75}] and dlg.preset.currentText() == "Green Plaintiff" and dlg.remove_button.isEnabled(),
+      str(saved))
+dlg.caption.setCurrentText("Exhibit"); pump()
+check("changing a field steps away from the preset", dlg.preset.currentIndex() == 0)
+dlg.preset.setCurrentIndex(1); dlg._preset_chosen(1); pump()
+check("choosing the preset fills the fields again", dlg.params()["caption"] == "Plaintiff's Exhibit"
+      and dlg.params()["color"] == labels.COLORS["Green"] and dlg.params()["width"] == 1.25)
+dlg2 = labels.LabelDialog(w, labels.remembered(dialogs.settings()))
+check("a new dialog (as in another file) offers the saved preset", dlg2.preset.itemText(1) == "Green Plaintiff")
+dlg2.deleteLater()
+dlg.remove_button.click(); pump()
+check("Remove takes it away", labels.presets(dialogs.settings()) == [] and dlg.preset.count() == 1)
 dlg.deleteLater()
 v.go_to_page(0); pump(100)
 w.grab().save(os.path.join(OUT, "05-label.png"))
