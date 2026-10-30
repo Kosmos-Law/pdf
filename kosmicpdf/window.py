@@ -12,7 +12,7 @@ from PySide6.QtWidgets import (QApplication, QComboBox, QDoubleSpinBox, QFileDia
                                QProgressDialog, QSizePolicy, QSplitter, QTabBar, QTabWidget,
                                QToolBar, QToolButton, QVBoxLayout, QWidget)
 
-from . import dialogs
+from . import dialogs, labels
 from .core import (MIME_PAGES, MIME_TAB, REDACT_STYLES, PdfDocument, is_image, load_any, mark_redaction, mime_pdf_bytes,
                    pages_mime)
 from .pageview import HIGHLIGHT_COLORS, PageView
@@ -55,6 +55,7 @@ LUCIDE = {
     "redact_search": "text-search", "apply_redactions": "check-check", "redact_done": "x", "about": "info",
     "redact_text": "text-select", "redact_area": "square-dashed",
     "mode_select": "text-cursor", "mode_highlight": "highlighter", "mode_typewriter": "type", "mode_redact": "eye-off",
+    "mode_label": "stamp",
 }
 
 
@@ -526,6 +527,7 @@ class MainWindow(QMainWindow):
         self.font_size.setProperty("keepsTypewriterOpen", True)
         self.font_size.valueChanged.connect(lambda v: self.tab and self.tab.view.set_font_size(v))
         self.hl_color = HIGHLIGHT_COLORS["Yellow"]
+        self.label_params = None          # the exhibit label being placed, while in "label" mode
         self.colors = None
         self.ocr_needed = False
         self._badges = {}                 # action name -> whether its icon has the red dot
@@ -628,10 +630,14 @@ class MainWindow(QMainWindow):
                 ("select", "Select", "V", "Select and copy text; click an annotation to move or delete it"),
                 ("highlight", "Highlight", "H", "Drag across text to highlight it, or highlight the selected text"),
                 ("typewriter", "Typewriter", "T", "Click to type text onto the page"),
-                ("redact", "Redact", "R", "Drag a box around content to mark it for redaction")):
-            slot = self.highlight_clicked if name == "highlight" else (lambda checked=False, n=name: self.set_mode(n))
+                ("redact", "Redact", "R", "Drag a box around content to mark it for redaction"),
+                ("label", "Exhibit Label…", "L", "Put an exhibit label on the page: choose its caption, number "
+                                                "and colour, then click where it goes")):
+            slot = {"highlight": self.highlight_clicked, "label": self.label_clicked}.get(
+                name, lambda checked=False, n=name: self.set_mode(n))
             a = A(f"mode_{name}", text, slot, key, tip=f"{tip} ({key})", checkable=True)
             self.mode_group.addAction(a)
+        self.actions_by_name["mode_label"].setIconText("Label")
         self.actions_by_name["mode_select"].setChecked(True)
 
     def build_menus(self):
@@ -655,7 +661,7 @@ class MainWindow(QMainWindow):
         menu("&View", ["zoom_in", "zoom_out", "fit_width", "fit_page", "actual", None, "thumbs"])
         menu("&Pages", ["rotate_left", "rotate_right", "rotate_180", None, "cut_pages", "copy_pages", "paste_pages",
                         "delete_pages", None, "extract", "insert_blank", "insert_file", "select_all_pages"])
-        menu("&Tools", ["mode_select", "mode_highlight", "mode_typewriter", "mode_redact", None,
+        menu("&Tools", ["mode_select", "mode_highlight", "mode_typewriter", "mode_label", "mode_redact", None,
                         "bates", "bates_files", "ocr", "pdfa", "flatten"])
         menu("&Help", ["about"])
         # Qt hears a menu item's shortcut only while its menu is in reach; with no menu bar,
@@ -703,6 +709,7 @@ class MainWindow(QMainWindow):
         tb.addWidget(colors)
         tb.addAction(a["mode_typewriter"])
         tb.addWidget(self.font_size)
+        tb.addAction(a["mode_label"])
         spacer = QWidget()
         spacer.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         tb.addWidget(spacer)
@@ -713,7 +720,7 @@ class MainWindow(QMainWindow):
         button.setPopupMode(QToolButton.InstantPopup)
         tb.addWidget(button)
         # Common commands are icons with tooltips; the tools keep a label so they are easy to find.
-        labelled = {a[n] for n in ("mode_select", "mode_highlight", "mode_typewriter", "ocr")}
+        labelled = {a[n] for n in ("mode_select", "mode_highlight", "mode_typewriter", "mode_label", "ocr")}
         tb.setToolButtonStyle(Qt.ToolButtonIconOnly)
         for b in tb.findChildren(QToolButton):
             if b.defaultAction() in labelled:
@@ -910,19 +917,54 @@ class MainWindow(QMainWindow):
         t.view.font_size = self.font_size.value()
         t.view.hl_color = self.hl_color
         t.view.redact_by = self.redact_by
+        t.view.set_label_params(self.label_params if self.mode == "label" else None)
         self.show_thumbs(t, self.actions_by_name["thumbs"].isChecked())
         t.view.apply_colors(self.colors)
         t.thumbs.apply_colors(self.colors)
 
     def set_mode(self, mode):
+        if self.mode == "label" and mode != "label":
+            self.statusBar().clearMessage()       # "Click where the label should go" no longer applies
         self.mode = mode
         self.actions_by_name[f"mode_{mode}"].setChecked(True)
         for t in self.doc_tabs():
             t.view.mode = mode
             t.view.clear_selection()
             t.view.hover_marks(None)              # a mark's shoulder button shows only while redacting
+            t.view.set_label_params(self.label_params if mode == "label" else None)
         self.redact_bar.setVisible(mode == "redact")
         self.update_redact_bar()
+
+    # --- exhibit labels -----------------------------------------------------------------
+    def label_clicked(self):
+        """The Exhibit Label button (or L): choose the label's caption, number, colour and
+        size, then place it with a click. Cancelling leaves the current tool as it was."""
+        dlg = labels.LabelDialog(self, labels.remembered(dialogs.settings()))
+        if dlg.exec():
+            self.start_labelling(dlg.params())
+        else:
+            self.actions_by_name[f"mode_{self.mode}"].setChecked(True)   # the click checked Label
+
+    def start_labelling(self, params):
+        """Switch to placing an exhibit label with these settings: it follows the mouse until clicked down."""
+        self.label_params = params
+        labels.remember(dialogs.settings(), params, placed=False)
+        self.set_mode("label")
+        self.statusBar().showMessage("Click where the exhibit label should go. Esc cancels.", 10000)
+
+    def _label_placed(self, params):
+        """A label went onto the page: move on to the next number or letter, and back to selecting,
+        with the label selected so it can be dragged into place."""
+        view = self.sender()
+        selected = view.sel_annot if isinstance(view, PageView) else None
+        labels.remember(dialogs.settings(), params, placed=True)
+        self.label_params = None
+        self.set_mode("select")                   # which clears selections: the new label is reselected below
+        if selected:
+            view.sel_annot = selected
+            view.canvas.update()
+        self.statusBar().showMessage("Label placed. Drag it to move it; the button on its corner edits or "
+                                     "deletes it. Press L for the next label.", 10000)
 
     def hl_icon(self):
         if self.hl_color is None:
@@ -1000,6 +1042,8 @@ class MainWindow(QMainWindow):
         tab.view.current_page_changed.connect(self._page_changed)
         tab.view.zoom_changed.connect(self._view_changed)
         tab.view.status.connect(self._view_status)
+        tab.view.label_placed.connect(self._label_placed)
+        tab.view.mode_requested.connect(self.set_mode)
         tab.pdoc.structure_changed.connect(self._doc_changed)
         tab.pdoc.pages_changed.connect(self._doc_changed)
         self.tabs.setCurrentIndex(i)
@@ -1011,7 +1055,8 @@ class MainWindow(QMainWindow):
     def detach_tab(self, tab):
         """Remove a tab from this window without closing its document."""
         for sig, slot in ((tab.view.current_page_changed, self._page_changed), (tab.view.zoom_changed, self._view_changed),
-                          (tab.view.status, self._view_status), (tab.pdoc.structure_changed, self._doc_changed),
+                          (tab.view.status, self._view_status), (tab.view.label_placed, self._label_placed),
+                          (tab.view.mode_requested, self.set_mode), (tab.pdoc.structure_changed, self._doc_changed),
                           (tab.pdoc.pages_changed, self._doc_changed)):
             sig.disconnect(slot)
         self.tabs.removeTab(self.tabs.indexOf(tab))

@@ -13,6 +13,8 @@ import pymupdf as fitz
 from PySide6.QtCore import QBuffer, QByteArray, QIODevice, QMimeData, QObject, Signal
 from PySide6.QtGui import QImageIOHandler, QImageReader
 
+from .labels import fix_rotation as fix_label_rotation
+
 MIME_PAGES = "application/x-kosmicpdf-pages"    # PDF bytes of the dragged/copied pages
 MIME_SOURCE = "application/x-kosmicpdf-source"  # "pid:doc_uid:i,j,k" so a drop knows where pages came from
 MIME_TAB = "application/x-kosmicpdf-tab"        # "pid:id(DocTab)" for dragging tabs between windows
@@ -247,6 +249,7 @@ class PdfDocument(QObject):
         for i in pages:
             page = self.doc[i]
             page.set_rotation((page.rotation + delta) % 360)
+            fix_label_rotation(page)             # exhibit labels turn with it, so they still read upright
         self.edited(pages)
 
     def delete_pages(self, pages):

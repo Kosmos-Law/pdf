@@ -1,5 +1,6 @@
 """Continuous-scroll page view with the annotation tools."""
 import bisect
+import json
 import re
 import time
 from collections import OrderedDict
@@ -10,6 +11,7 @@ from PySide6.QtGui import (QColor, QFont, QFontMetricsF, QGuiApplication, QImage
                            QTextBlockFormat, QTextCursor)
 from PySide6.QtWidgets import QApplication, QFrame, QMenu, QScrollArea, QTextEdit, QToolButton, QWidget
 
+from . import labels
 from .core import MIME_PAGES, mark_redaction, mime_pdf_bytes, parse_da_fontsize
 from .theme import NOTE_MENU_ICON, Colors, draw_page_shadow, lucide
 
@@ -360,7 +362,9 @@ class ShoulderButton(QToolButton):
     so a stray click can't remove anything."""
     SIZE = 18
 
-    def __init__(self, parent, color, label, tip, on_remove):
+    def __init__(self, parent, color, label, tip, on_remove, extra=()):
+        """`extra` adds (icon name, text, slot) items above the remove item: an exhibit
+        label's button offers "Edit label…" as well."""
         super().__init__(parent)
         self.setCursor(Qt.ArrowCursor)
         self.setToolTip(tip)
@@ -369,7 +373,12 @@ class ShoulderButton(QToolButton):
         self.setPopupMode(QToolButton.InstantPopup)
         self.set_color(color)
         menu = QMenu(self)
-        menu.addAction(lucide("trash-2", QColor(self.palette().color(self.foregroundRole()))), label, on_remove)
+        text_color = QColor(self.palette().color(self.foregroundRole()))
+        for icon, text, slot in extra:
+            menu.addAction(lucide(icon, text_color), text, slot)
+        if extra:
+            menu.addSeparator()
+        menu.addAction(lucide("trash-2", text_color), label, on_remove)
         self.setMenu(menu)
 
     def set_color(self, color):
@@ -444,11 +453,17 @@ class PageView(QScrollArea):
     status = Signal(str)
     pages_dropped = Signal(bytes, int)   # pdf bytes, insert-before index
     files_dropped = Signal(list)
+    label_placed = Signal(dict)          # an exhibit label was put on the page, with these settings
+    mode_requested = Signal(str)         # the view wants the window to switch tool (Esc while placing a label)
 
     def __init__(self, pdoc, parent=None):
         super().__init__(parent)
         self._hover_mark = None       # (page, xref, canvas rect) of the redaction mark under the mouse
         self.mark_button = None       # its shoulder button (Remove mark), made when first needed
+        self.label_button = None      # the same for an exhibit label (Edit label…, Delete label)
+        self.label_params = None      # settings of the exhibit label being placed, while in "label" mode
+        self._ghost = None            # (page, QRectF in canvas coords) of the label following the cursor
+        self._ghost_pm = None         # (cache key, QPixmap) of the ghost, redrawn when settings or zoom change
         self.pdoc = pdoc
         self.canvas = PageCanvas(self)
         self.setWidget(self.canvas)
@@ -489,8 +504,9 @@ class PageView(QScrollArea):
 
     def apply_colors(self, colors):
         self.colors = colors
-        if self.mark_button:
-            self.mark_button.set_color(colors.accent)
+        for b in (self.mark_button, self.label_button):
+            if b:
+                b.set_color(colors.accent)
         pal = self.viewport().palette()
         pal.setColor(self.viewport().backgroundRole(), colors.pages)
         self.viewport().setPalette(pal)
@@ -533,6 +549,7 @@ class PageView(QScrollArea):
 
     def relayout(self, keep_page=None):
         self.hover_marks(None)            # its mark moves; it comes back with the mouse
+        self._ghost = None                # so does the ghost label, on the next mouse move
         keep = self._current if keep_page is None else keep_page
         frac = self._scroll_fraction()
         if self.fit:
@@ -662,6 +679,11 @@ class PageView(QScrollArea):
             p.setPen(QPen(REDACT_EDGE, 1, Qt.DashLine))
             p.setBrush(REDACT_WASH)
             p.drawRect(self._rubber[1])
+        if self._ghost and self.label_params:
+            # The exhibit label about to be placed, see-through, exactly as it will look.
+            p.setOpacity(labels.GHOST_OPACITY)
+            p.drawPixmap(self._ghost[1].topLeft(), self.ghost_pixmap())
+            p.setOpacity(1.0)
         p.end()
 
     def paint_overlays(self, p, i):
@@ -708,23 +730,55 @@ class PageView(QScrollArea):
                 hit = (i, a.xref, r)              # last one wins: topmost
         return hit
 
+    def label_at(self, pos):
+        """The exhibit label under pos, or whose shoulder button is: (page, xref, canvas rect)."""
+        i = self.page_at(pos, slack=ShoulderButton.SIZE + 3)
+        if i is None:
+            return None
+        hit = None
+        page = self.pdoc.doc[i]
+        for a in page.annots(types=[fitz.PDF_ANNOT_STAMP]):
+            if not labels.is_label(a):
+                continue
+            r = self.to_canvas(i, a.rect)
+            reach = r.united(QRectF(r.right(), r.top(), ShoulderButton.SIZE + 4, ShoulderButton.SIZE))
+            if reach.contains(QPointF(pos)):
+                hit = (i, a.xref, r)
+        return hit
+
     def hover_marks(self, pos):
-        """Show the shoulder button of the mark under the mouse (while redacting), or hide it."""
-        if self.mark_button and self.mark_button.menu().isVisible():
-            return                                # its menu is open: keep the mark it belongs to
+        """Show the shoulder button of what is under the mouse: a redaction mark (while
+        redacting), or an exhibit label (while selecting or placing labels). Or hide them."""
+        for button in (self.mark_button, self.label_button):
+            if button and button.menu().isVisible():
+                return                            # its menu is open: keep the thing it belongs to
         hit = self.mark_at(pos) if self.mode == "redact" and pos is not None else None
         self._hover_mark = hit
         if hit is None:
             if self.mark_button:
                 self.mark_button.hide()
+        else:
+            if self.mark_button is None:
+                self.mark_button = ShoulderButton(self.canvas, self.colors.accent, "Remove mark",
+                                                  "Remove this redaction mark", self._remove_hovered_mark)
+                self.mark_button.setFocusPolicy(Qt.NoFocus)
+            self.mark_button.place_beside(hit[2])
+            self.mark_button.mark = hit[:2]       # the button keeps its mark, whatever the mouse does next
+            self.mark_button.show()
+        hit = self.label_at(pos) if self.mode in ("select", "label") and pos is not None else None
+        if hit is None:
+            if self.label_button:
+                self.label_button.hide()
             return
-        if self.mark_button is None:
-            self.mark_button = ShoulderButton(self.canvas, self.colors.accent, "Remove mark",
-                                              "Remove this redaction mark", self._remove_hovered_mark)
-            self.mark_button.setFocusPolicy(Qt.NoFocus)
-        self.mark_button.place_beside(hit[2])
-        self.mark_button.mark = hit[:2]           # the button keeps its mark, whatever the mouse does next
-        self.mark_button.show()
+        if self.label_button is None:
+            self.label_button = ShoulderButton(
+                self.canvas, self.colors.accent, "Delete label", "Edit or delete this exhibit label",
+                lambda: self.delete_label(*self.label_button.label),
+                extra=[("stamp", "Edit label…", lambda: self.edit_label(*self.label_button.label))])
+            self.label_button.setFocusPolicy(Qt.NoFocus)
+        self.label_button.place_beside(hit[2])
+        self.label_button.label = hit[:2]
+        self.label_button.show()
 
     def _remove_hovered_mark(self):
         self.remove_mark(*self.mark_button.mark)
@@ -777,12 +831,24 @@ class PageView(QScrollArea):
             self._rubber = (i, QRectF(pos, pos))
             return
         self.sel_annot = None
+        if self.mode == "label":
+            # Clicking a label already on the page picks it up to move it; anywhere else places the new one.
+            a = self.annot_at(i, pt)
+            if a and labels.is_label(a):
+                self.sel_annot = (i, a.xref)
+                self._press = ("move", i, pos)
+                self.hover_marks(None)
+                self.canvas.update()
+            elif self.label_params:
+                self.place_label(i, pos)
+            return
         if self.mode == "select":
             a = self.annot_at(i, pt)
             if a and movable(a.type[0]):
                 self.sel = None
                 self.sel_annot = (i, a.xref)
                 self._press = ("move", i, pos)
+                self.hover_marks(None)            # the shoulder button comes back where the label lands
                 self.canvas.update()
                 return
             if a:
@@ -803,6 +869,8 @@ class PageView(QScrollArea):
         pos = e.position().toPoint()
         if not self._press or not (e.buttons() & Qt.LeftButton):
             self._update_cursor(pos)
+            if self.mode == "label":
+                self.move_ghost(pos)
             return
         kind, i = self._press[0], self._press[1]
         start = self._press[2]
@@ -855,6 +923,7 @@ class PageView(QScrollArea):
             if off is not None and (abs(off.x()) > 1 or abs(off.y()) > 1):
                 self.move_annot(i, off)
             self.canvas.update()
+            self.hover_marks(e.position().toPoint())
         elif kind == "word":
             if self.mode == "highlight" and self.sel:
                 self.highlight_selection()
@@ -888,6 +957,10 @@ class PageView(QScrollArea):
         if a and a.type[0] == fitz.PDF_ANNOT_FREE_TEXT:
             self.edit_freetext(i, a)
             return
+        if a and labels.is_label(a) and self.mode in ("select", "label"):
+            self._press = None                    # the second click's press began a move; it ends here
+            self.edit_label(i, a.xref)
+            return
         if (self.mode == "select" or (self.mode == "highlight" and self.hl_color is not None)
                 or (self.mode == "redact" and self.redact_by == "text")):
             # Double-click selects a word; dragging on from there extends it a character at a time.
@@ -903,7 +976,7 @@ class PageView(QScrollArea):
 
     def _update_cursor(self, pos):
         cursors = {"select": Qt.IBeamCursor, "highlight": Qt.IBeamCursor,
-                   "typewriter": Qt.IBeamCursor, "redact": Qt.CrossCursor}
+                   "typewriter": Qt.IBeamCursor, "redact": Qt.CrossCursor, "label": Qt.CrossCursor}
         i = self.page_at(pos)
         cur = cursors[self.mode] if i is not None else Qt.ArrowCursor
         if i is not None and self.mode == "redact" and self.redact_by == "text":
@@ -911,6 +984,10 @@ class PageView(QScrollArea):
         self.hover_marks(pos)
         if i is not None and self.mode == "select" and self.annot_at(i, self.to_pdf(i, pos)):
             cur = Qt.SizeAllCursor
+        if i is not None and self.mode == "label":
+            a = self.annot_at(i, self.to_pdf(i, pos))
+            if a and labels.is_label(a):
+                cur = Qt.SizeAllCursor
         self.canvas.setCursor(cur)
 
     def key_press(self, e):
@@ -918,6 +995,9 @@ class PageView(QScrollArea):
             self.delete_selected_annot()
             return True
         if e.key() == Qt.Key_Escape:
+            if self.mode == "label":
+                self.mode_requested.emit("select")    # stop placing the label
+                return True
             self.clear_selection()
             return True
         return False
@@ -943,8 +1023,13 @@ class PageView(QScrollArea):
                     si, line_rects(self.chars(si), lo, hi)))
             menu.addAction("Mark for redaction", self.redact_selection)
         if self.sel_annot:
-            annot = self.pdoc.doc[self.sel_annot[0]].load_annot(self.sel_annot[1])
-            if annot:
+            page = self.pdoc.doc[self.sel_annot[0]]      # the annotation lives only as long as the page
+            annot = page.load_annot(self.sel_annot[1])
+            if annot and labels.is_label(annot):
+                si, xref = self.sel_annot
+                menu.addAction("Edit label…", lambda: self.edit_label(si, xref))
+                menu.addAction("Delete label", lambda: self.delete_label(si, xref))
+            elif annot:
                 menu.addAction("Delete annotation", self.delete_selected_annot)
         if not menu.isEmpty():
             menu.exec(e.globalPos())
@@ -1107,10 +1192,82 @@ class PageView(QScrollArea):
             return
         vis = annot.rect * page.rotation_matrix
         vis = vis + (offset.x() / self.zoom, offset.y() / self.zoom, offset.x() / self.zoom, offset.y() / self.zoom)
-        annot.set_rect(vis * page.derotation_matrix)
-        annot.update()
-        self.sel_annot = (i, annot.xref)
+        if labels.is_label(annot):
+            # Kept on the page, and moved without the annotation API, which would redraw it (see labels).
+            labels.set_label_rect(page, xref, labels.clamp(vis, fitz.Rect(0, 0, page.rect.width, page.rect.height)))
+        else:
+            annot.set_rect(vis * page.derotation_matrix)
+            annot.update()
+        self.sel_annot = (i, xref)
         self.pdoc.edited([i])
+
+    # --- exhibit labels -------------------------------------------------------------
+    def set_label_params(self, params):
+        """Settings of the label to place (while in "label" mode), or None when not placing."""
+        self.label_params = params
+        if params is None and self._ghost:
+            self.canvas.update(self._ghost[1].toAlignedRect())
+            self._ghost = None
+        self.canvas.update()
+
+    def ghost_pixmap(self):
+        dpr = self.devicePixelRatioF()
+        key = (json.dumps(self.label_params, sort_keys=True), round(self.zoom, 4), dpr)
+        if not self._ghost_pm or self._ghost_pm[0] != key:
+            self._ghost_pm = (key, labels.label_pixmap(self.label_params, self.zoom, dpr))
+        return self._ghost_pm[1]
+
+    def move_ghost(self, pos):
+        """Keep the ghost label centred under the mouse, wholly on the page it is over."""
+        old = self._ghost
+        i = self.page_at(pos)
+        if i is None or not self.label_params:
+            self._ghost = None
+        else:
+            page = self.pdoc.doc[i]
+            vis = labels.label_rect_at(page, self.to_vis(i, pos), self.label_params)
+            pr = self.page_rects[i]
+            self._ghost = (i, QRectF(pr.left() + vis.x0 * self.zoom, pr.top() + vis.y0 * self.zoom,
+                                     vis.width * self.zoom, vis.height * self.zoom))
+        for g in (old, self._ghost):
+            if g:
+                self.canvas.update(g[1].toAlignedRect().adjusted(-1, -1, 1, 1))
+
+    def place_label(self, i, pos):
+        """Put the label being placed on page i, centred on the click (kept on the page)."""
+        params = self.label_params
+        self.pdoc.checkpoint()
+        page = self.pdoc.doc[i]
+        vis = labels.label_rect_at(page, self.to_vis(i, pos), params)
+        xref = labels.add_label(page, vis, params)
+        self.sel_annot = (i, xref)
+        self.pdoc.edited([i])
+        self.label_placed.emit(params)
+
+    def edit_label(self, i, xref):
+        """Change a label's caption, number, colour or size through the dialog."""
+        if i >= self.pdoc.page_count:
+            return
+        params = labels.label_params(self.pdoc.doc, xref)
+        if params is None:
+            return
+        self.hover_marks(None)
+        dlg = labels.LabelDialog(self.window(), params, editing=True)
+        if not dlg.exec() or dlg.params() == params:
+            return
+        self.pdoc.checkpoint()
+        page = self.pdoc.doc[i]
+        labels.update_label(page, xref, dlg.params())
+        self.sel_annot = (i, xref)
+        self.pdoc.edited([i])
+        self.status.emit("Label changed.")
+
+    def delete_label(self, i, xref):
+        if self.label_button:
+            self.label_button.hide()
+        self.sel_annot = (i, xref)
+        self.delete_selected_annot()
+        self.status.emit("Label deleted. Undo (Ctrl+Z) brings it back.")
 
     # --- typewriter ---------------------------------------------------------
     def start_typewriter(self, i, vis_pt, text="", font_size=None, replace_xref=None, restore_flags=None):

@@ -997,6 +997,142 @@ check("dialog buttons and message boxes get Lucide icons, drawn once",
       and QSize(24, 24) in question.availableSizes()
       and lstyle.pixelMetric(QStyle.PM_MessageBoxIconSize) == 24, str(question.availableSizes()))
 
+# --- exhibit labels ---------------------------------------------------------------------------------------------
+from kosmicpdf import labels  # noqa: E402
+check("Label sits on the toolbar beside the typewriter, in the Tools menu, and L is its key",
+      w.actions_by_name["mode_label"] in on_toolbar | {b.defaultAction() for b in w.toolbar.findChildren(QToolButton)}
+      and w.actions_by_name["mode_label"].shortcut().toString() == "L"
+      and w.actions_by_name["mode_label"] in [a for m in w.main_menu.actions() for a in (m.menu().actions() if m.menu() else [])])
+check("designations follow on: 3 -> 4, A -> B, Z -> AA, 12-A -> 12-B",
+      [labels.next_designation(x) for x in ("3", "A", "Z", "12-A", "09")] == ["4", "B", "AA", "12-B", "10"])
+w.tabs.setCurrentWidget(t); pump()
+v = t.view
+v.go_to_page(0); pump()
+params = dict(labels.DEFAULTS, caption="PLAINTIFF'S EXHIBIT", designation="7", color=labels.COLORS["Blue"])
+w.start_labelling(params)
+check("the label tool is a mode of its own, with the settings handed to the view", w.mode == "label" and v.mode == "label"
+      and v.label_params == params)
+pr = v.page_rects[0]
+spot = pr.topLeft() + QPoint(200, 150)
+mouse(v.canvas, "move", spot, Qt.NoButton); pump()
+gw, gh = 1.75 * 72 * v.zoom, 1.0 * 72 * v.zoom
+check("a ghost label follows the mouse, centred on it, at the label's size for this zoom",
+      v._ghost is not None and v._ghost[0] == 0 and abs(v._ghost[1].center().x() - spot.x()) < 1.5
+      and abs(v._ghost[1].center().y() - spot.y()) < 1.5 and abs(v._ghost[1].width() - gw) < 1.5
+      and abs(v._ghost[1].height() - gh) < 1.5, str(v._ghost))
+corner = pr.topLeft() + QPoint(5, 5)
+mouse(v.canvas, "move", corner, Qt.NoButton); pump()
+check("the ghost stays on the page near an edge", v._ghost[1].left() >= pr.left() - 0.5 and v._ghost[1].top() >= pr.top() - 0.5)
+depth = len(t.pdoc._undo)
+mouse(v.canvas, "press", spot); mouse(v.canvas, "release", spot); pump()
+p0 = t.pdoc.doc[0]
+stamps = [a for a in p0.annots() if labels.is_label(a)]
+lr = fitz.Rect(stamps[0].rect) if stamps else None
+check("a click places the label there, as a stamp annotation 1.75 by 1 inch", len(stamps) == 1
+      and abs(lr.width - 126) < 0.5 and abs(lr.height - 72) < 0.5
+      and abs(v.to_canvas(0, lr).center().x() - spot.x()) < 1.5 and abs(v.to_canvas(0, lr).center().y() - spot.y()) < 1.5, str(lr))
+check("placing it is one undo step and switches back to Select with the label selected",
+      len(t.pdoc._undo) == depth + 1 and w.mode == "select" and v.sel_annot == (0, stamps[0].xref) and v.label_params is None)
+check("it carries its settings, for editing later", labels.label_params(t.pdoc.doc, stamps[0].xref) == params)
+check("the next label is numbered 8, with the same caption and colour",
+      labels.remembered(dialogs.settings())["designation"] == "8"
+      and labels.remembered(dialogs.settings())["caption"] == "PLAINTIFF'S EXHIBIT"
+      and labels.remembered(dialogs.settings())["color"] == labels.COLORS["Blue"])
+pm = v.render(0).toImage()
+c = v.to_canvas(0, lr)
+dpr = pm.devicePixelRatio()
+inside = pm.pixelColor(round((c.left() + 0.08 * c.width() - pr.left()) * dpr), round((c.top() + 0.6 * c.height() - pr.top()) * dpr))
+check("it renders in its colour", inside.blue() > 200 and inside.red() < 160, inside.name())
+ap_xref = int(t.pdoc.doc.xref_get_key(stamps[0].xref, "AP/N")[1].split()[0])
+check("its appearance is Kosmic PDF's own vector drawing", b"HeBo" in t.pdoc.doc.xref_stream(ap_xref)
+      and b"PLAINTIFF'S EXHIBIT" in t.pdoc.doc.xref_stream(ap_xref))
+# drag it
+cc = c.center().toPoint()
+mouse(v.canvas, "press", cc); mouse(v.canvas, "move", cc + QPoint(40, 25)); mouse(v.canvas, "release", cc + QPoint(40, 25)); pump()
+p0 = t.pdoc.doc[0]
+moved_rect = fitz.Rect([a for a in p0.annots() if labels.is_label(a)][0].rect)   # copied: the page won't outlive the undo below
+check("dragging moves the label, keeping its drawing", abs(moved_rect.x0 - lr.x0 - 40 / v.zoom) < 1.5
+      and abs(moved_rect.y0 - lr.y0 - 25 / v.zoom) < 1.5 and b"HeBo" in t.pdoc.doc.xref_stream(ap_xref)
+      and moved_rect.width == lr.width, f"{lr} -> {moved_rect}")
+far = v.to_canvas(0, moved_rect).center().toPoint()
+mouse(v.canvas, "press", far); mouse(v.canvas, "move", far + QPoint(2000, 2000)); mouse(v.canvas, "release", far + QPoint(2000, 2000)); pump()
+p0 = t.pdoc.doc[0]
+edge = [a for a in p0.annots() if labels.is_label(a)][0].rect
+check("a label can't be dragged off the page", abs(edge.x1 - p0.rect.width) < 0.5 and abs(edge.y1 - p0.rect.height) < 0.5, str(edge))
+t.pdoc.undo(); pump()
+# hover button: Edit label… / Delete label
+p0 = t.pdoc.doc[0]
+box = v.to_canvas(0, [a for a in p0.annots() if labels.is_label(a)][0].rect)
+mouse(v.canvas, "move", box.center().toPoint(), Qt.NoButton); pump()
+lb = v.label_button
+check("hovering over a label in Select shows a shoulder button like a note's",
+      isinstance(lb, ShoulderButton) and lb.isVisible()
+      and lb.geometry().topLeft() == QPoint(round(box.right()) + 3, round(box.top()))
+      and [a.text() for a in lb.menu().actions() if a.text()] == ["Edit label…", "Delete label"], str(lb and lb.geometry()))
+w.set_mode("highlight"); mouse(v.canvas, "move", box.center().toPoint(), Qt.NoButton); pump()
+check("but not while highlighting", not lb.isVisible())
+w.set_mode("select"); mouse(v.canvas, "move", box.center().toPoint(), Qt.NoButton); pump()
+# edit through the dialog
+from PySide6.QtWidgets import QDialog  # noqa: E402
+def fake_exec(self):
+    self.designation.setText("7-A"); self.color.setCurrentIndex(self.color.findData(labels.COLORS["Red"]))
+    return QDialog.Accepted
+real_exec = labels.LabelDialog.exec
+labels.LabelDialog.exec = fake_exec
+depth = len(t.pdoc._undo)
+[a for a in lb.menu().actions() if a.text() == "Edit label…"][0].trigger(); pump()
+labels.LabelDialog.exec = real_exec
+p0 = t.pdoc.doc[0]
+edited = [a for a in p0.annots() if labels.is_label(a)][0]
+ep = labels.label_params(t.pdoc.doc, edited.xref)
+check("Edit label… changes the number and colour in place, as one undo step", ep["designation"] == "7-A"
+      and ep["color"] == labels.COLORS["Red"] and len(t.pdoc._undo) == depth + 1
+      and b"7-A" in t.pdoc.doc.xref_stream(int(t.pdoc.doc.xref_get_key(edited.xref, "AP/N")[1].split()[0]))
+      and abs(edited.rect.x0 - moved_rect.x0) < 0.01 and abs(edited.rect.y0 - moved_rect.y0) < 0.01, str(ep))
+mouse(v.canvas, "move", box.center().toPoint(), Qt.NoButton); pump()
+click_menu_item(lb, "Delete label")
+check("Delete label removes it; undo brings it back", not [a for a in t.pdoc.doc[0].annots() if labels.is_label(a)])
+t.pdoc.undo(); pump()
+check("undo brings it back", len([a for a in t.pdoc.doc[0].annots() if labels.is_label(a)]) == 1)
+# a rotated page: the label reads upright, and rotating a page keeps it so
+v.go_to_page(2); pump()
+w.start_labelling(dict(params, designation="8"))
+rp = v.page_rects[2].topLeft() + QPoint(300, 200)
+mouse(v.canvas, "move", rp, Qt.NoButton); mouse(v.canvas, "press", rp); mouse(v.canvas, "release", rp); pump()
+p2 = t.pdoc.doc[2]
+rot_label = [a for a in p2.annots() if labels.is_label(a)][0]
+vis = rot_label.rect * p2.rotation_matrix
+mat = t.pdoc.doc.xref_get_key(int(t.pdoc.doc.xref_get_key(rot_label.xref, "AP/N")[1].split()[0]), "Matrix")[1].strip("[]")
+check("on a page rotated 90, the label is 1.75 by 1 inch as seen and its drawing is turned to match",
+      p2.rotation == 90 and abs(vis.width - 126) < 0.5 and abs(vis.height - 72) < 0.5 and mat.split() == ["0", "1", "-1", "0", "0", "0"],
+      f"{vis} {mat}")
+centre_before = (vis.tl + vis.br) / 2 * p2.derotation_matrix
+t.pdoc.rotate([2], 90); pump()
+p2 = t.pdoc.doc[2]
+rot_label = [a for a in p2.annots() if labels.is_label(a)][0]
+vis2 = rot_label.rect * p2.rotation_matrix
+mat2 = t.pdoc.doc.xref_get_key(int(t.pdoc.doc.xref_get_key(rot_label.xref, "AP/N")[1].split()[0]), "Matrix")[1].strip("[]")
+centre_after = (vis2.tl + vis2.br) / 2 * p2.derotation_matrix
+check("rotating the page turns the label upright again, centred where it was",
+      p2.rotation == 180 and abs(vis2.width - 126) < 0.5 and abs(vis2.height - 72) < 0.5 and mat2.split() == ["-1", "0", "0", "-1", "0", "0"]
+      and abs(centre_after - centre_before) < 1, f"{vis2} {mat2} {centre_before} {centre_after}")
+t.pdoc.undo(); pump()
+# Esc stops placing
+w.start_labelling(params)
+v.canvas.setFocus(); pump()
+QApplication.sendEvent(v.canvas, QKeyEvent(QEvent.KeyPress, Qt.Key_Escape, Qt.NoModifier)); pump()
+check("Esc while placing goes back to Select without placing", w.mode == "select" and v.label_params is None
+      and not w.statusBar().currentMessage().startswith("Click where"), w.statusBar().currentMessage())
+# the dialog: the number chosen but not placed (7) is offered again, with a live preview
+dlg = labels.LabelDialog(w, labels.remembered(dialogs.settings()))
+check("the label dialog offers the number last chosen, with a live preview",
+      dlg.designation.text() == "7" and dlg.preview.pixmap() is not None and not dlg.preview.pixmap().isNull()
+      and dlg.params()["caption"] == "PLAINTIFF'S EXHIBIT")
+dlg.deleteLater()
+v.go_to_page(0); pump(100)
+w.grab().save(os.path.join(OUT, "05-label.png"))
+w.set_mode("select")
+
 # --- page number field ----------------------------------------------------------------------------------------
 w.tabs.setCurrentWidget(t); pump()
 w.page_box.setText("4")
