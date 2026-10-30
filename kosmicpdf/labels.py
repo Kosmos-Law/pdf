@@ -36,7 +36,8 @@ COLORS = OrderedDict([
     ("Green", "#dde8cb"), ("Blue", "#cfe0ff"), ("Purple", "#dedce6"), ("Beige", "#ddd8c3"),
     ("Grey", "#e2e2e2"), ("White", "#ffffff"),
 ])
-SIZES = OrderedDict([("Small", (1.0, 0.625)), ("Standard", (1.25, 0.75)), ("Large", (1.5, 0.875))])   # inches
+SIZES = OrderedDict([("Small", (1.0, 0.625)), ("Standard", (1.25, 0.75)), ("Wide", (1.75, 0.75)),
+                     ("Large", (1.5, 0.875))])   # inches; Wide is Standard's height, for a long caption
 CAPTIONS = ["Exhibit", "Plaintiff Exhibit", "Defendant Exhibit", "Deposition Exhibit", "Joint Exhibit",
             "Petitioner Exhibit", "Respondent Exhibit", "State Exhibit", "Trial Exhibit"]
 DEFAULTS = {"caption": "Exhibit", "designation": "1", "color": COLORS["Yellow"], "width": 1.25, "height": 0.75}

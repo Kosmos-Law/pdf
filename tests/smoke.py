@@ -1129,8 +1129,9 @@ dlg = labels.LabelDialog(w, labels.remembered(dialogs.settings()))
 check("the label dialog offers the number last chosen, with a live preview",
       dlg.designation.text() == "7" and dlg.preview.pixmap() is not None and not dlg.preview.pixmap().isNull()
       and dlg.params()["caption"] == "Plaintiff's Exhibit")
-check("the sizes offered are Small, Standard and Large, Standard (1.25 by 0.75) being the default",
-      [dlg.size.itemText(i).split()[0] for i in range(dlg.size.count())] == ["Small", "Standard", "Large"]
+check("the sizes offered are Small, Standard, Wide and Large, Standard (1.25 by 0.75) being the default",
+      [dlg.size.itemText(i).split()[0] for i in range(dlg.size.count())] == ["Small", "Standard", "Wide", "Large"]
+      and labels.SIZES["Wide"] == (1.75, 0.75)
       and labels.DEFAULTS["width"] == 1.25 and labels.SIZES["Standard"] == (1.25, 0.75))
 check("the preset captions are in title case and the colours pale, like the highlighters",
       labels.CAPTIONS[:2] == ["Exhibit", "Plaintiff Exhibit"] and labels.COLORS["Yellow"] == "#ffffa6"
