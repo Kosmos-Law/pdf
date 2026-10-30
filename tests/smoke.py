@@ -1133,9 +1133,9 @@ check("the sizes offered are Small and Standard, Standard being the default",
       [dlg.size.itemText(i).split()[0] for i in range(dlg.size.count())] == ["Small", "Standard"]
       and labels.DEFAULTS["width"] == 1.5 and labels.SIZES["Standard"] == (1.5, 0.875))
 check("the preset captions are in title case and the colours pale, like the highlighters",
-      labels.CAPTIONS[:2] == ["Exhibit", "Plaintiff's Exhibit"] and labels.COLORS["Yellow"] == "#ffffa6"
+      labels.CAPTIONS[:2] == ["Exhibit", "Plaintiff Exhibit"] and labels.COLORS["Yellow"] == "#ffffa6"
       and all(QColor(c).lightness() > 190 for c in labels.COLORS.values()))
-check("the rounded black border is drawn in the label", b"0 G 1.0 w" in t.pdoc.doc.xref_stream(ap_xref)
+check("the rounded black border is drawn in the label", b"0 G 2.0 w" in t.pdoc.doc.xref_stream(ap_xref)
       and b" c " in t.pdoc.doc.xref_stream(ap_xref))
 # presets: save, choose, remove; they live in the settings, so they carry across files
 from PySide6.QtWidgets import QInputDialog  # noqa: E402

@@ -37,11 +37,11 @@ COLORS = OrderedDict([
     ("Grey", "#e2e2e2"), ("White", "#ffffff"),
 ])
 SIZES = OrderedDict([("Small", (1.25, 0.75)), ("Standard", (1.5, 0.875))])   # inches
-CAPTIONS = ["Exhibit", "Plaintiff's Exhibit", "Defendant's Exhibit", "Deposition Exhibit", "Joint Exhibit",
-            "Petitioner's Exhibit", "Respondent's Exhibit", "State's Exhibit", "Trial Exhibit"]
+CAPTIONS = ["Exhibit", "Plaintiff Exhibit", "Defendant Exhibit", "Deposition Exhibit", "Joint Exhibit",
+            "Petitioner Exhibit", "Respondent Exhibit", "State Exhibit", "Trial Exhibit"]
 DEFAULTS = {"caption": "Exhibit", "designation": "1", "color": COLORS["Yellow"], "width": 1.5, "height": 0.875}
 PRESETS_KEY = "label/presets"      # the user's saved presets, as JSON: [{name, caption, color, width, height}]
-BORDER = 1.0                        # pt
+BORDER = 2.0                        # pt
 CORNER = 0.09                       # corner radius, as a share of the label's height
 KAPPA = 0.5523                      # Bézier handle length for a quarter circle, as a share of the radius
 GHOST_OPACITY = 0.65     # of the label shown under the cursor while choosing where it goes
