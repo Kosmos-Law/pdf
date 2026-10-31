@@ -19,8 +19,8 @@ jobs:
       run:
         shell: pwsh
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
 
@@ -39,13 +39,19 @@ jobs:
         # requirements.txt without dependencies, as install.sh does: PyMuPDF declares
         # page-layout packages the app never uses. OCRmyPDF brings its own.
         run: |
-          python -m pip install --upgrade pip
-          python -m pip install --no-deps -r requirements.txt
-          python -m pip install -r packaging/windows/requirements-build.txt
-          python -m pip check
+          python -m pip install --upgrade pip *> pip.log
+          python -m pip install --no-deps -r requirements.txt *>> pip.log
+          if ($LASTEXITCODE -ne 0) { pwsh packaging/windows/annotate.ps1 pip.log "pip could not install requirements.txt"; exit 1 }
+          python -m pip install -r packaging/windows/requirements-build.txt *>> pip.log
+          if ($LASTEXITCODE -ne 0) { pwsh packaging/windows/annotate.ps1 pip.log "pip could not install the build requirements"; exit 1 }
+          python -m pip list
 
       - name: Fetch Tesseract and Ghostscript
-        run: pwsh packaging/windows/fetch_tools.ps1
+        run: |
+          pwsh packaging/windows/fetch_tools.ps1 *> tools.log
+          $code = $LASTEXITCODE
+          Get-Content tools.log
+          if ($code -ne 0) { pwsh packaging/windows/annotate.ps1 tools.log "Staging Tesseract and Ghostscript failed"; exit 1 }
 
       - name: Test the code
         env:
@@ -60,7 +66,11 @@ jobs:
           if ($code -ne 0) { pwsh packaging/windows/annotate.ps1 smoke-code.log "The test suite failed in the Python environment"; exit 1 }
 
       - name: Build
-        run: pyinstaller --noconfirm --clean packaging/windows/kosmicpdf.spec
+        run: |
+          pyinstaller --noconfirm --clean packaging/windows/kosmicpdf.spec *> pyinstaller.log
+          $code = $LASTEXITCODE
+          Get-Content pyinstaller.log | Select-Object -Last 20
+          if ($code -ne 0) { pwsh packaging/windows/annotate.ps1 pyinstaller.log "PyInstaller failed"; exit 1 }
 
       - name: Test the built app
         # The same suite, run inside KosmicPDF.exe (see kosmicpdf_entry.py), on the
@@ -80,19 +90,21 @@ jobs:
 
       - name: Installer
         run: |
-          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" /Q /DAppVersion=${{ steps.version.outputs.version }} packaging\windows\kosmicpdf.iss
-          if ($LASTEXITCODE -ne 0) { exit 1 }
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" /Q /DAppVersion=${{ steps.version.outputs.version }} packaging\windows\kosmicpdf.iss *> iscc.log
+          $code = $LASTEXITCODE
+          Get-Content iscc.log | Select-Object -Last 20
+          if ($code -ne 0) { pwsh packaging/windows/annotate.ps1 iscc.log "Inno Setup failed"; exit 1 }
           Get-ChildItem dist\*.exe | ForEach-Object { "{0}  {1:N0} MB" -f $_.Name, ($_.Length / 1MB) }
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v5
         with:
           name: KosmicPDF-Setup-${{ steps.version.outputs.version }}
           path: dist/KosmicPDF-Setup-*.exe
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v5
         if: always()
         with:
-          name: test-logs
-          path: smoke-*.log
+          name: logs
+          path: "*.log"
           if-no-files-found: ignore
 
       - name: Release
