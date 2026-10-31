@@ -1,10 +1,12 @@
 """Main window, document tabs, and detachable tab bar."""
 import itertools
 import os
+import sys
 import tempfile
 
 import pymupdf as fitz
-from PySide6.QtCore import QByteArray, QEvent, QMimeData, QPoint, QProcess, QSize, Qt, QTimer, QUrl, qVersion
+from PySide6.QtCore import (QByteArray, QEvent, QMimeData, QPoint, QProcess, QProcessEnvironment, QSize, Qt, QTimer,
+                            QUrl, qVersion)
 from PySide6.QtGui import (QAction, QActionGroup, QCursor, QDesktopServices, QDrag, QGuiApplication, QIcon,
                            QIntValidator, QPalette, QKeySequence, QMouseEvent)
 from PySide6.QtWidgets import (QApplication, QComboBox, QDoubleSpinBox, QFileDialog,
@@ -446,6 +448,10 @@ class ExternalJob:
         with open(self.src, "wb") as f:
             f.write(tab.pdoc.to_bytes())
         self.proc = QProcess(win)
+        env = QProcessEnvironment()          # as the app sees it now, including the bundled tools' PATH
+        for k, v in os.environ.items():
+            env.insert(k, v)
+        self.proc.setProcessEnvironment(env)
         self.proc.setProcessChannelMode(QProcess.MergedChannels)
         self.proc.readyReadStandardOutput.connect(self._output)
         self.proc.finished.connect(self._finished)
@@ -456,6 +462,8 @@ class ExternalJob:
         self.dlg.setWindowModality(Qt.WindowModal)
         self.dlg.canceled.connect(self.proc.kill)
         self.dlg.show()
+        if sys.platform == "win32":
+            args = ["--use-threads"] + args   # worker threads, not processes: each process would open a console window
         self.proc.start("ocrmypdf", args + [self.src, self.dst])
 
     def _output(self):
@@ -1473,7 +1481,12 @@ class MainWindow(QMainWindow):
     def _need_ocrmypdf(self):
         if dialogs.ocrmypdf_available():
             return True
-        QMessageBox.information(self, "OCRmyPDF needed", "This needs OCRmyPDF and Tesseract:\n\nsudo apt install ocrmypdf tesseract-ocr")
+        if sys.platform == "win32":
+            how = ("The Windows installer includes them; if they have gone missing, installing Kosmic PDF again "
+                   "from kosmos.law puts them back.")
+        else:
+            how = "sudo apt install ocrmypdf tesseract-ocr"
+        QMessageBox.information(self, "OCRmyPDF needed", f"This needs OCRmyPDF and Tesseract:\n\n{how}")
         return False
 
     def ocr(self):

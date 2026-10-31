@@ -1,0 +1,6 @@
+# What the Windows build needs beyond requirements.txt (see kosmicpdf.spec and the
+# .github/workflows/windows.yml workflow that runs it).
+pyinstaller==6.22.3
+pyinstaller-hooks-contrib==2026.9
+# Frozen into ocrmypdf.exe, beside the app, with its Python dependencies.
+ocrmypdf==17.13.0

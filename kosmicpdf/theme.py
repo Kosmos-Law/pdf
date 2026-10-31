@@ -5,6 +5,7 @@ the app matches Mint-Y, Mint-Y-Dark, or whatever theme is active. Icons are
 Lucide (ISC licence, see icons/LICENSE-lucide), tinted to the theme's text colour.
 """
 import os
+import sys
 
 from PySide6.QtCore import QByteArray, QPointF, QRectF, QSize, Qt
 from PySide6.QtGui import QColor, QIcon, QImage, QPainter, QPalette, QPen, QPixmap
@@ -12,7 +13,9 @@ from PySide6.QtSvg import QSvgRenderer
 from PySide6.QtWidgets import QAbstractSpinBox, QApplication, QProxyStyle, QPushButton, QStyle
 
 ICON_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "icons")
-CACHE_DIR = os.path.join(os.environ.get("XDG_CACHE_HOME", os.path.expanduser("~/.cache")), "kosmicpdf", "icons")
+_cache_home = (os.environ.get("XDG_CACHE_HOME") or (os.environ.get("LOCALAPPDATA") if sys.platform == "win32" else None)
+               or os.path.expanduser("~/.cache"))
+CACHE_DIR = os.path.join(_cache_home, "kosmicpdf", "icons")
 TOOLBAR_ICON = 16      # px, also the menus' icon size
 NOTE_MENU_ICON = 12    # px, the menu button on a typewriter note
 ICON_STROKE = 1.5      # Lucide line width in its 24-unit grid; its default of 2 looks heavy at this size

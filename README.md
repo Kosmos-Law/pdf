@@ -1,16 +1,22 @@
 # Kosmic PDF
 
-A lightweight, free and open-source PDF viewer and editor for Linux, built with
-Qt (PySide6) and PyMuPDF. OCR and PDF/A use OCRmyPDF, Tesseract and Ghostscript.
+A lightweight, free and open-source PDF viewer and editor for Linux and Windows, built
+with Qt (PySide6) and PyMuPDF. OCR and PDF/A use OCRmyPDF, Tesseract and Ghostscript.
 
 ## Installing
 
-As a Flatpak, with automatic updates (it includes OCR and PDF/A support; see
+Downloads for both systems are at https://kosmos.law/pdf/.
+
+**Linux:** as a Flatpak, with automatic updates (it includes OCR and PDF/A support; see
 `packaging/flatpak/README.md`):
 
     flatpak install --user https://kosmos.law/flatpak/kosmicpdf.flatpakref
 
-Or from source, on Debian, Ubuntu, Linux Mint and the like (or download the ZIP
+**Windows:** run `KosmicPDF-Setup.exe` from the
+[latest release](https://github.com/Kosmos-Law/pdf/releases/latest). It installs for
+the current user, OCR and PDF/A included; see `packaging/windows/README.md`.
+
+**Linux, from source**, on Debian, Ubuntu, Linux Mint and the like (or download the ZIP
 from GitHub instead of cloning):
 
     git clone https://github.com/Kosmos-Law/pdf.git kosmicpdf

@@ -9,6 +9,7 @@ before PyMuPDF is loaded and the document is opened (see MainWindow.open_when_sh
 import importlib.util
 import json
 import os
+import secrets
 import socket
 import sys
 import tempfile
@@ -16,10 +17,12 @@ import types
 
 from . import __version__
 
-# The single-instance handoff uses a plain Unix socket (Python's socket module rather
-# than QtNetwork, which needs Kerberos libraries the Flatpak runtime doesn't ship).
-# Inside a Flatpak each launch gets its own /tmp, so the socket goes in the app's
-# runtime folder, which all of its sandboxed copies share.
+WINDOWS = sys.platform == "win32"
+# The single-instance handoff uses a plain socket (Python's socket module rather than
+# QtNetwork, which needs Kerberos libraries the Flatpak runtime doesn't ship): a Unix
+# socket, or on Windows, which has none, a loopback TCP port. Inside a Flatpak each
+# launch gets its own /tmp, so the socket goes in the app's runtime folder, which all
+# of its sandboxed copies share.
 FLATPAK_ID = os.environ.get("FLATPAK_ID")
 # --dev marks the development copy (./install.sh --dev): its own name, grey icon and
 # socket, so it runs alongside the installed app instead of handing files to it.
@@ -27,8 +30,44 @@ DEV = "--dev" in sys.argv
 _runtime = os.environ.get("XDG_RUNTIME_DIR") or tempfile.gettempdir()
 if FLATPAK_ID:
     SOCKET_PATH = os.path.join(_runtime, "app", FLATPAK_ID, "kosmicpdf.sock")
+elif WINDOWS:
+    # Not a socket but a note of where the running copy listens: its port, a secret that
+    # proves a caller read this file, and its process id (see _connect).
+    SOCKET_PATH = os.path.join(os.environ.get("LOCALAPPDATA") or _runtime, "kosmicpdf",
+                               f"instance{'-dev' if DEV else ''}.json")
 else:
     SOCKET_PATH = os.path.join(_runtime, f"kosmicpdf{'-dev' if DEV else ''}-{os.getuid()}.sock")
+
+
+def _connect():
+    """A socket connected to the running copy, and the secret to send it (None on Unix).
+    Raises OSError (or ValueError, for a damaged note) when nothing is listening."""
+    if WINDOWS:
+        with open(SOCKET_PATH) as f:
+            note = json.load(f)
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        s.settimeout(0.5)
+        try:
+            s.connect(("127.0.0.1", int(note["port"])))
+        except OSError:
+            s.close()
+            raise
+        # Windows gives the focus only to the foreground process (this launch) or one it
+        # names here; without this the running copy's window could only flash its button.
+        try:
+            import ctypes
+            ctypes.windll.user32.AllowSetForegroundWindow(int(note["pid"]))
+        except (OSError, AttributeError, ValueError, KeyError):
+            pass
+        return s, str(note["secret"])
+    s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    s.settimeout(0.5)
+    try:
+        s.connect(SOCKET_PATH)
+    except OSError:
+        s.close()
+        raise
+    return s, None
 
 
 def send_to_running(files, token=None):
@@ -36,16 +75,21 @@ def send_to_running(files, token=None):
     `token` is this launch's activation token (XDG_ACTIVATION_TOKEN), which lets the
     running copy bring its window forward: Wayland gives focus only to a window that
     shows one."""
-    s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-    s.settimeout(0.5)
     try:
-        s.connect(SOCKET_PATH)
-        s.sendall(json.dumps({"files": files, "token": token}).encode())
-        return True
-    except OSError:
+        s, secret = _connect()
+    except (OSError, ValueError, KeyError):
         return False
-    finally:
-        s.close()
+    with s:
+        try:
+            s.sendall(json.dumps({"files": files, "token": token, "secret": secret}).encode())
+            if WINDOWS:
+                # The port in the note may have been reused by another program since the copy
+                # that wrote it died: only Kosmic PDF answers "ok".
+                s.shutdown(socket.SHUT_WR)
+                return s.recv(2) == b"ok"
+            return True
+        except OSError:
+            return False
 
 
 def finish_startup_notification():
@@ -86,13 +130,23 @@ class InstanceServer:
     def __init__(self, on_files):
         from PySide6.QtCore import QSocketNotifier
         self.on_files = on_files
-        try:
-            os.unlink(SOCKET_PATH)          # left behind by an instance that didn't exit cleanly
-        except FileNotFoundError:
-            pass
+        self.secret = None
         os.makedirs(os.path.dirname(SOCKET_PATH), exist_ok=True)
-        self.sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-        self.sock.bind(SOCKET_PATH)
+        if WINDOWS:
+            self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            self.sock.bind(("127.0.0.1", 0))
+            self.secret = secrets.token_hex(16)
+            note = {"port": self.sock.getsockname()[1], "secret": self.secret, "pid": os.getpid()}
+            with open(SOCKET_PATH + ".tmp", "w") as f:
+                json.dump(note, f)
+            os.replace(SOCKET_PATH + ".tmp", SOCKET_PATH)   # never half-written when a launch reads it
+        else:
+            try:
+                os.unlink(SOCKET_PATH)          # left behind by an instance that didn't exit cleanly
+            except FileNotFoundError:
+                pass
+            self.sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+            self.sock.bind(SOCKET_PATH)
         self.sock.listen(8)
         self.sock.setblocking(False)
         self.notifier = QSocketNotifier(self.sock.fileno(), QSocketNotifier.Read)
@@ -111,12 +165,18 @@ class InstanceServer:
                     data += chunk
             except OSError:
                 pass
-        try:
-            message = json.loads(data.decode() or "[]")
-        except ValueError:
-            return
-        if isinstance(message, list):      # from a launch of an earlier version: just the files
-            message = {"files": message}
+            try:
+                message = json.loads(data.decode() or "[]")
+            except ValueError:
+                return
+            if isinstance(message, list):      # from a launch of an earlier version: just the files
+                message = {"files": message}
+            if self.secret and message.get("secret") != self.secret:
+                return                         # not a launch of Kosmic PDF (it didn't read the note)
+            try:
+                conn.sendall(b"ok")
+            except OSError:
+                pass
         self.on_files(message.get("files") or [], message.get("token"))
 
 
@@ -172,6 +232,21 @@ def open_from_another_launch(paths, token=None):
         bring_to_current_workspace(int(win.winId()))
 
 
+def add_bundled_tools():
+    """The Windows build (packaging/windows) carries OCRmyPDF, Tesseract and Ghostscript
+    beside the app; put them where the OCR and PDF/A commands look, ahead of any copies
+    installed on the machine."""
+    if not getattr(sys, "frozen", False):
+        return
+    here = os.path.dirname(os.path.abspath(sys.executable))
+    tools = os.path.join(here, "tools")
+    ahead = [p for p in (here, os.path.join(tools, "tesseract"), os.path.join(tools, "gs", "bin")) if os.path.isdir(p)]
+    os.environ["PATH"] = os.pathsep.join(ahead + [os.environ.get("PATH", "")])
+    tessdata = os.path.join(tools, "tesseract", "tessdata")
+    if os.path.isdir(tessdata):
+        os.environ["TESSDATA_PREFIX"] = tessdata
+
+
 def main():
     files = [os.path.abspath(a) for a in sys.argv[1:] if not a.startswith("-")]
     # --new-instance runs on its own, without taking over the running copy's socket.
@@ -180,6 +255,7 @@ def main():
         return 0
 
     # Qt and the app's modules are loaded only now, so a handoff above is quick.
+    add_bundled_tools()
     defer_import("pymupdf")
     from PySide6.QtCore import QSettings
     from PySide6.QtWidgets import QApplication
@@ -189,7 +265,8 @@ def main():
     # For test launches: keep settings (recent files, last folder) out of the user's own.
     # Flatpak always sets XDG_CONFIG_HOME itself, so that can't be used to redirect them.
     if os.environ.get("KOSMICPDF_SETTINGS_DIR"):
-        QSettings.setPath(QSettings.NativeFormat, QSettings.UserScope, os.environ["KOSMICPDF_SETTINGS_DIR"])
+        QSettings.setDefaultFormat(QSettings.IniFormat)    # a folder of files, on Windows too (not the registry)
+        QSettings.setPath(QSettings.IniFormat, QSettings.UserScope, os.environ["KOSMICPDF_SETTINGS_DIR"])
     app = QApplication(sys.argv)
     app.setApplicationName("Kosmic PDF (Dev)" if DEV else "Kosmic PDF")   # also ends each window's title
     app.setApplicationVersion(__version__)

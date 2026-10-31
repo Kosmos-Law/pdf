@@ -1,0 +1,13 @@
+Kosmic PDF for Windows includes these programs and libraries, each under its own licence:
+
+  Qt and PySide6 (LGPL 3.0)             https://www.qt.io/  https://pyside.org/
+  PyMuPDF and MuPDF (AGPL 3.0)          https://pymupdf.io/  https://mupdf.com/
+  OCRmyPDF (MPL 2.0) with pikepdf and qpdf (MPL 2.0, Apache 2.0)   https://ocrmypdf.readthedocs.io/
+  Tesseract OCR (Apache 2.0), Windows build by UB Mannheim          https://github.com/tesseract-ocr/tesseract
+  Leptonica (BSD 2-clause)              http://www.leptonica.org/
+  Ghostscript (AGPL 3.0)                https://www.ghostscript.com/
+  Python (PSF licence)                  https://www.python.org/
+  Lucide icons (ISC)                    https://lucide.dev/
+
+Kosmic PDF itself is free software under the GNU Affero General Public License,
+version 3 or later; see LICENSE in this folder. Source: https://github.com/Kosmos-Law/pdf

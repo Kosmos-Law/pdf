@@ -1,0 +1,107 @@
+# Builds the Windows installer (see packaging/windows/README.md): on every push to main
+# as a check, and on a version tag (v0.3.1) as a GitHub release carrying the installer.
+name: Windows
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: windows-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Version
+        id: version
+        run: |
+          $v = python -c "import kosmicpdf; print(kosmicpdf.__version__)"
+          "version=$v" >> $env:GITHUB_OUTPUT
+          Write-Host "Kosmic PDF $v"
+          if ("${{ github.ref }}".StartsWith("refs/tags/") -and "${{ github.ref_name }}" -ne "v$v") {
+            Write-Output "::error::The tag ${{ github.ref_name }} does not match __version__ ($v)"
+            exit 1
+          }
+
+      - name: Install Python packages
+        # requirements.txt without dependencies, as install.sh does: PyMuPDF declares
+        # page-layout packages the app never uses. OCRmyPDF brings its own.
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install --no-deps -r requirements.txt
+          python -m pip install -r packaging/windows/requirements-build.txt
+          python -m pip check
+
+      - name: Fetch Tesseract and Ghostscript
+        run: pwsh packaging/windows/fetch_tools.ps1
+
+      - name: Test the code
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: |
+          $tools = "$PWD\packaging\windows\tools"
+          $env:PATH = "$tools\tesseract;$tools\gs\bin;$env:PATH"
+          $env:TESSDATA_PREFIX = "$tools\tesseract\tessdata"
+          python tests/smoke.py "$env:RUNNER_TEMP\smoke" *> smoke-code.log
+          $code = $LASTEXITCODE
+          Get-Content smoke-code.log | Select-Object -Last 3
+          if ($code -ne 0) { pwsh packaging/windows/annotate.ps1 smoke-code.log "The test suite failed in the Python environment"; exit 1 }
+
+      - name: Build
+        run: pyinstaller --noconfirm --clean packaging/windows/kosmicpdf.spec
+
+      - name: Test the built app
+        # The same suite, run inside KosmicPDF.exe (see kosmicpdf_entry.py), on the
+        # files users get.
+        timeout-minutes: 20
+        env:
+          QT_QPA_PLATFORM: offscreen
+          KOSMICPDF_TEST_INSTALLED: "1"
+          KOSMICPDF_SELFTEST: ${{ github.workspace }}\tests\smoke.py
+          KOSMICPDF_SELFTEST_LOG: ${{ github.workspace }}\smoke-built.log
+        run: |
+          & dist\KosmicPDF\ocrmypdf.exe --version
+          if ($LASTEXITCODE -ne 0) { Write-Output "::error::ocrmypdf.exe does not run"; exit 1 }
+          $p = Start-Process -Wait -PassThru -FilePath dist\KosmicPDF\KosmicPDF.exe -ArgumentList "$env:RUNNER_TEMP\smoke-built"
+          if (Test-Path smoke-built.log) { Get-Content smoke-built.log | Select-Object -Last 3 }
+          if ($p.ExitCode -ne 0) { pwsh packaging/windows/annotate.ps1 smoke-built.log "The test suite failed inside the built app (exit $($p.ExitCode))"; exit 1 }
+
+      - name: Installer
+        run: |
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" /Q /DAppVersion=${{ steps.version.outputs.version }} packaging\windows\kosmicpdf.iss
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          Get-ChildItem dist\*.exe | ForEach-Object { "{0}  {1:N0} MB" -f $_.Name, ($_.Length / 1MB) }
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: KosmicPDF-Setup-${{ steps.version.outputs.version }}
+          path: dist/KosmicPDF-Setup-*.exe
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-logs
+          path: smoke-*.log
+          if-no-files-found: ignore
+
+      - name: Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $v = "${{ steps.version.outputs.version }}"
+          python tools/release_notes.py $v > release-notes.md
+          # An unversioned copy, so https://github.com/Kosmos-Law/pdf/releases/latest/download/KosmicPDF-Setup.exe always fetches the newest.
+          Copy-Item "dist\KosmicPDF-Setup-$v.exe" dist\KosmicPDF-Setup.exe
+          gh release create "${{ github.ref_name }}" --title "Kosmic PDF $v" --notes-file release-notes.md "dist\KosmicPDF-Setup-$v.exe" dist\KosmicPDF-Setup.exe

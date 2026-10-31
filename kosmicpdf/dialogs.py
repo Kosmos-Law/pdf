@@ -2,6 +2,7 @@
 import os
 import shutil
 import subprocess
+import sys
 
 import pymupdf as fitz
 from PySide6.QtCore import QEvent, QSettings, Qt, Signal
@@ -413,9 +414,14 @@ class BatesFilesDialog(QDialog):
         super().accept()
 
 
+# On Windows a console program run from a windowed app opens a console window, unless told not to.
+NO_WINDOW = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
+
+
 def tesseract_languages():
     try:
-        out = subprocess.run(["tesseract", "--list-langs"], capture_output=True, text=True, timeout=10).stdout
+        out = subprocess.run(["tesseract", "--list-langs"], capture_output=True, text=True, timeout=10,
+                             creationflags=NO_WINDOW).stdout
         return [l.strip() for l in out.splitlines()[1:] if l.strip() and l.strip() != "osd"]
     except (OSError, subprocess.SubprocessError):
         return []

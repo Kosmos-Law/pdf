@@ -23,7 +23,8 @@ app = QApplication(sys.argv)
 # Keep test runs out of the real settings (recent files, last folder, Bates numbers).
 from PySide6.QtCore import QSettings  # noqa: E402
 import tempfile  # noqa: E402
-QSettings.setPath(QSettings.NativeFormat, QSettings.UserScope, tempfile.mkdtemp(prefix="kosmicpdf-test-settings-"))
+QSettings.setDefaultFormat(QSettings.IniFormat)      # files in a folder, on Windows too (not the registry)
+QSettings.setPath(QSettings.IniFormat, QSettings.UserScope, tempfile.mkdtemp(prefix="kosmicpdf-test-settings-"))
 QMessageBox.question = staticmethod(lambda *a, **k: QMessageBox.Yes)   # auto-confirm
 results = []
 
@@ -726,10 +727,17 @@ check("handoff reaches the running instance", appmod.send_to_running(["/a.pdf", 
 appmod.send_to_running(["/c.pdf"], token="wayland-token-123"); pump(30)
 check("on Wayland, the launch's activation token goes along with the files",
       received[-1] == (["/c.pdf"], "wayland-token-123"), str(received[-1]))
-import socket as _socket, json as _json  # noqa: E401, E402
-old = _socket.socket(_socket.AF_UNIX, _socket.SOCK_STREAM); old.connect(appmod.SOCKET_PATH)
-old.sendall(_json.dumps(["/d.pdf"]).encode()); old.close(); pump(30)
-check("a launch of an earlier version (files only) is still understood", received[-1] == (["/d.pdf"], None))
+import json as _json  # noqa: E402
+if appmod.WINDOWS:
+    stranger, _ = appmod._connect()         # knows the port but sends no secret: not a launch of Kosmic PDF
+    stranger.sendall(_json.dumps({"files": ["/d.pdf"]}).encode()); stranger.close(); pump(30)
+    check("on Windows, a message without the secret is ignored", received[-1] == (["/c.pdf"], "wayland-token-123"))
+    os.remove(appmod.SOCKET_PATH)
+    check("no note of a running copy -> handoff declines", appmod.send_to_running(["/e.pdf"]) is False)
+else:
+    old, _ = appmod._connect()
+    old.sendall(_json.dumps(["/d.pdf"]).encode()); old.close(); pump(30)
+    check("a launch of an earlier version (files only) is still understood", received[-1] == (["/d.pdf"], None))
 check("app modules don't load QtNetwork", "PySide6.QtNetwork" not in sys.modules)
 os.environ.pop("DESKTOP_STARTUP_ID", None)
 appmod.finish_startup_notification()   # nothing to finish: returns quietly
