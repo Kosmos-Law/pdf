@@ -55,7 +55,7 @@ function Unpack($name, $setup, $dir, $marker) {
         Write-Host "Contents of $tmp and Program Files:"
         Get-ChildItem $tmp | ForEach-Object { "  $($_.Name)" }
         Get-ChildItem $env:ProgramFiles | ForEach-Object { "  $($_.Name)" }
-        throw "$name: $marker not found after unpacking $setup"
+        throw "${name}: $marker not found after unpacking $setup"
     }
     Write-Host "$name files at $($found.DirectoryName)"
     return $found.DirectoryName
