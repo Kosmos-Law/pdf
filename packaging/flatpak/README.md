@@ -34,8 +34,11 @@ without the theme, Kosmic PDF falls back to a dark Kosmos palette.)
    `~/.cache/kosmicpdf-flatpak/site/`. The first build compiles the OCR engine and
    Ghostscript (about 15 minutes); later builds reuse them (about 2 minutes).
 3. `tools/flatpak_deploy.sh dev` copies that build to the dev server
-   (https://darmok.link/flatpak/). James's own copy follows dev, so
-   `flatpak update` there gets the new version to try exactly as users will.
+   (https://darmok.link/flatpak/). To try it there before it reaches users:
+   `flatpak install --user https://darmok.link/flatpak/kosmicpdf.flatpakref` on a
+   machine that doesn't have the production copy (the two can't be installed side
+   by side). James's own copy follows production, like everyone else's, so he sees
+   each release exactly as users do, one step later.
 4. `tools/flatpak_deploy.sh production` copies the **same** build, unchanged, to
    https://kosmos.law/flatpak/, and users' copies update from it on their own.
 
@@ -67,8 +70,11 @@ Requirements: `flatpak-builder` (`sudo apt install flatpak-builder`). The build
 SDK is downloaded into a private Flatpak installation under
 `~/.cache/kosmicpdf-flatpak`, leaving the user's own installation alone.
 
-To have your own copy follow production instead of dev:
-`flatpak remote-modify --user --url=https://kosmos.law/flatpak/repo/ kosmos`.
+To have an installed copy follow dev instead of production (or back again), point
+its remote at the other repository; both are signed by the same key:
+`flatpak remote-modify --user --url=https://darmok.link/flatpak/repo/ <remote>`,
+where `<remote>` is the name `flatpak info --user law.kosmos.KosmicPDF` shows as
+Origin (usually `kosmos` or `kosmicpdf-origin`).
 
 ## The signing key
 
