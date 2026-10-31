@@ -722,9 +722,23 @@ appmod.SOCKET_PATH = os.path.join(tempfile.mkdtemp(prefix="kosmicpdf-test-sock-"
 check("no running instance -> handoff declines", appmod.send_to_running(["/x.pdf"]) is False)
 received = []
 server = appmod.InstanceServer(lambda files, token: received.append((files, token)))
-check("handoff reaches the running instance", appmod.send_to_running(["/a.pdf", "/b.pdf"]) and (pump(30) or True)
+
+
+def send_to_running(files, token=None):
+    """As another launch would, from its own process: on Windows the sender waits for the
+    running copy's answer, which here needs this process's event loop to run meanwhile."""
+    import threading
+    result = []
+    t = threading.Thread(target=lambda: result.append(appmod.send_to_running(files, token)))
+    t.start()
+    while t.is_alive():
+        pump(5)
+    return result[0]
+
+
+check("handoff reaches the running instance", send_to_running(["/a.pdf", "/b.pdf"]) and (pump(30) or True)
       and received == [(["/a.pdf", "/b.pdf"], None)], str(received))
-appmod.send_to_running(["/c.pdf"], token="wayland-token-123"); pump(30)
+send_to_running(["/c.pdf"], token="wayland-token-123"); pump(30)
 check("on Wayland, the launch's activation token goes along with the files",
       received[-1] == (["/c.pdf"], "wayland-token-123"), str(received[-1]))
 import json as _json  # noqa: E402

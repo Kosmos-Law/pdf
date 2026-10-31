@@ -84,8 +84,10 @@ def send_to_running(files, token=None):
             s.sendall(json.dumps({"files": files, "token": token, "secret": secret}).encode())
             if WINDOWS:
                 # The port in the note may have been reused by another program since the copy
-                # that wrote it died: only Kosmic PDF answers "ok".
+                # that wrote it died: only Kosmic PDF answers "ok" (once its event loop gets
+                # round to it, so this waits longer than the connection did).
                 s.shutdown(socket.SHUT_WR)
+                s.settimeout(5)
                 return s.recv(2) == b"ok"
             return True
         except OSError:
