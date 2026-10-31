@@ -506,10 +506,10 @@ class PdfaDialog(QDialog):
 
 
 # --- terms of use -----------------------------------------------------------------------------------------------
-# The Windows build asks the user to accept kosmicpdf/terms.txt (no warranty, use at your
-# own risk) before the program can be used: the installer shows it, and so does the
-# program at its first start, in case the folder was copied rather than installed. Change
-# TERMS_VERSION when the text changes materially, and everyone is asked again.
+# The user accepts kosmicpdf/terms.txt (no warranty, use at your own risk) before the
+# program can be used: it shows them at its first start, on every system, and the Windows
+# installer shows them too. Change TERMS_VERSION when the text changes materially, and
+# everyone is asked again.
 TERMS_VERSION = "2026-10-31"
 TERMS_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "terms.txt")
 

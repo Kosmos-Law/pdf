@@ -276,11 +276,10 @@ def main():
     app.setWindowIcon(app_icon())
     app.setStyle(LucideStyle(app.style().name()))
     follow_color_scheme(app)
-    if WINDOWS:
-        # Nothing can be done with the program until its terms (no warranty) are accepted.
-        from .dialogs import TermsDialog, terms_accepted
-        if not terms_accepted() and not TermsDialog().exec():
-            return 0
+    # Nothing can be done with the program until its terms (no warranty) are accepted.
+    from .dialogs import TermsDialog, terms_accepted
+    if not terms_accepted() and not TermsDialog().exec():
+        return 0
     if "--new-instance" not in sys.argv:
         app.instance_server = InstanceServer(open_from_another_launch)   # lives as long as the app
     win = MainWindow()

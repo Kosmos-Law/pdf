@@ -38,6 +38,9 @@ the current user only and is safe to run again, e.g. after `git pull`.
 
 Needs Python 3.10 or newer with the venv module (`sudo apt install python3-venv`).
 
+At its first start, Kosmic PDF shows its terms of use (`kosmicpdf/terms.txt`: no
+warranty, use at your own risk) and runs once they are accepted.
+
 ## Running
 
 From the Menu (Office), or:

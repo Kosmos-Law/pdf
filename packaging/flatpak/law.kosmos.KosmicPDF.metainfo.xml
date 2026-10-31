@@ -35,6 +35,11 @@
     <color type="primary" scheme_preference="dark">#2e3440</color>
   </branding>
   <releases>
+    <release version="0.3.3" date="2026-10-31">
+      <description>
+        <p>At its first start, Kosmic PDF shows its terms of use (no warranty; use at your own risk) and runs once they are accepted, on Linux as on Windows.</p>
+      </description>
+    </release>
     <release version="0.3.2" date="2026-10-31">
       <description>
         <p>On Windows, the installer and the program's first start show the terms of use (no warranty; use at your own risk) and go on only once they are accepted.</p>

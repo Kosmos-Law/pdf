@@ -14,8 +14,8 @@ default for PDFs, pick it under Settings > Apps > Default apps.
 
 The installer shows the terms of use (`kosmicpdf/terms.txt`: no warranty, use at your
 own risk) and installs only once they are accepted; the program shows them again at its
-first start, in case its folder was copied rather than installed, and runs only once
-"I agree" is chosen. The answer is kept in the settings under `terms/accepted` with the
+first start (on every system, not only Windows) and runs only once "I agree" is chosen.
+The answer is kept in the settings under `terms/accepted` with the
 date in `dialogs.TERMS_VERSION`; change that date when the terms change materially, and
 everyone is asked again.
 
