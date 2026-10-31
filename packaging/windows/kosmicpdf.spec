@@ -23,7 +23,8 @@ unused_qt = ["PySide6.QtNetwork", "PySide6.QtQml", "PySide6.QtQuick", "PySide6.Q
 app = Analysis(
     [os.path.join(SPECPATH, "kosmicpdf_entry.py")],
     pathex=[root],
-    datas=[(os.path.join(root, "kosmicpdf", "icons"), os.path.join("kosmicpdf", "icons"))],
+    datas=[(os.path.join(root, "kosmicpdf", "icons"), os.path.join("kosmicpdf", "icons")),
+           (os.path.join(root, "kosmicpdf", "terms.txt"), "kosmicpdf")],
     # QtTest is only for the self-test (see kosmicpdf_entry.py); it is small.
     hiddenimports=["PySide6.QtTest"],
     excludes=["tkinter", "_tkinter"] + unused_qt,

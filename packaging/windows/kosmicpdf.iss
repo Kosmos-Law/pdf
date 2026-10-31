@@ -36,7 +36,8 @@ OutputBaseFilename=KosmicPDF-Setup-{#AppVersion}
 SetupIconFile=..\..\kosmicpdf\icons\app\kosmicpdf.ico
 UninstallDisplayIcon={app}\{#AppExe}
 UninstallDisplayName={#AppName}
-LicenseFile=..\..\LICENSE
+; The terms of use (no warranty): the installer goes on only once they are accepted.
+LicenseFile=..\..\kosmicpdf\terms.txt
 Compression=lzma2/max
 SolidCompression=yes
 WizardStyle=modern
@@ -50,6 +51,8 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 [Files]
 Source: "..\..\dist\KosmicPDF\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "THIRD-PARTY.txt"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\..\LICENSE"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\..\kosmicpdf\terms.txt"; DestDir: "{app}"; DestName: "TERMS.txt"; Flags: ignoreversion
 
 [Icons]
 Name: "{autoprograms}\{#AppName}"; Filename: "{app}\{#AppExe}"; Comment: "View, organise, annotate and redact PDFs"

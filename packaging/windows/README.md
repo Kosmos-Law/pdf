@@ -12,6 +12,13 @@ installs for the current user, without an administrator password, and adds Kosmi
 to the Start menu and to the "Open with" choices for PDFs and images. To make it the
 default for PDFs, pick it under Settings > Apps > Default apps.
 
+The installer shows the terms of use (`kosmicpdf/terms.txt`: no warranty, use at your
+own risk) and installs only once they are accepted; the program shows them again at its
+first start, in case its folder was copied rather than installed, and runs only once
+"I agree" is chosen. The answer is kept in the settings under `terms/accepted` with the
+date in `dialogs.TERMS_VERSION`; change that date when the terms change materially, and
+everyone is asked again.
+
 The installer isn't code-signed, so Windows shows its "unrecognised app" warning the
 first time: choose *More info*, then *Run anyway*. Updates are a matter of running a
 newer installer over the old one; the app doesn't update itself.

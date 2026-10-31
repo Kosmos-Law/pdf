@@ -9,8 +9,8 @@ from PySide6.QtCore import QEvent, QSettings, Qt, Signal
 from PySide6.QtGui import QPalette
 from PySide6.QtWidgets import (QAbstractItemView, QCheckBox, QComboBox, QDialog, QDialogButtonBox,
                                QDoubleSpinBox, QFileDialog, QFormLayout, QGroupBox, QHBoxLayout,
-                               QLabel, QLineEdit, QListWidget, QListWidgetItem, QMessageBox, QPushButton,
-                               QRadioButton, QSpinBox, QVBoxLayout, QWidget)
+                               QLabel, QLineEdit, QListWidget, QListWidgetItem, QMessageBox, QPlainTextEdit,
+                               QPushButton, QRadioButton, QSpinBox, QVBoxLayout, QWidget)
 
 from .core import PAGE_SIZES, is_image, load_any
 
@@ -503,6 +503,62 @@ class PdfaDialog(QDialog):
 
     def args(self):
         return ["--skip-text", "--tesseract-timeout", "0", "--output-type", self.level.currentData()]
+
+
+# --- terms of use -----------------------------------------------------------------------------------------------
+# The Windows build asks the user to accept kosmicpdf/terms.txt (no warranty, use at your
+# own risk) before the program can be used: the installer shows it, and so does the
+# program at its first start, in case the folder was copied rather than installed. Change
+# TERMS_VERSION when the text changes materially, and everyone is asked again.
+TERMS_VERSION = "2026-10-31"
+TERMS_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "terms.txt")
+
+
+def terms_text():
+    with open(TERMS_PATH, encoding="utf-8") as f:
+        return f.read()
+
+
+def terms_accepted(s=None):
+    return (s or settings()).value("terms/accepted") == TERMS_VERSION
+
+
+def accept_terms(s=None):
+    (s or settings()).setValue("terms/accepted", TERMS_VERSION)
+
+
+class TermsDialog(QDialog):
+    """The terms, with a box to tick before "I agree" can be chosen; "Quit" otherwise."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Before you use Kosmic PDF")
+        self.setModal(True)
+        self.resize(640, 560)
+        self.text = QPlainTextEdit()
+        self.text.setReadOnly(True)
+        self.text.setPlainText(terms_text())
+        self.text.setProperty("field", True)
+        self.agree = QCheckBox("I have read these terms, and I agree to them")
+        self.buttons = QDialogButtonBox()
+        self.ok = self.buttons.addButton("I agree", QDialogButtonBox.AcceptRole)
+        self.quit = self.buttons.addButton("Quit", QDialogButtonBox.RejectRole)
+        self.ok.setEnabled(False)
+        self.agree.toggled.connect(self.ok.setEnabled)
+        self.buttons.accepted.connect(self.accept)
+        self.buttons.rejected.connect(self.reject)
+        lead = QLabel("Kosmic PDF comes with no warranty, and you use it at your own risk. "
+                      "Please read these terms; the program can be used once you agree to them.")
+        lead.setWordWrap(True)
+        lay = QVBoxLayout(self)
+        lay.addWidget(lead)
+        lay.addWidget(self.text, 1)
+        lay.addWidget(self.agree)
+        lay.addWidget(self.buttons)
+
+    def accept(self):
+        accept_terms()
+        super().accept()
 
 
 def ocrmypdf_available():

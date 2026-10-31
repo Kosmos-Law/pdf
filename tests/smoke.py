@@ -9,7 +9,7 @@ import pymupdf as fitz
 from PySide6.QtCore import QEvent, QPoint, QPointF, QSize, Qt, QTimer
 from PySide6.QtGui import QGuiApplication, QMouseEvent
 from PySide6.QtTest import QTest
-from PySide6.QtWidgets import QApplication, QFileDialog, QMenu, QMessageBox, QToolButton
+from PySide6.QtWidgets import QApplication, QDialog, QFileDialog, QMenu, QMessageBox, QToolButton
 
 if not os.environ.get("KOSMICPDF_TEST_INSTALLED"):   # set when testing an installed build (e.g. the Flatpak)
     sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -726,6 +726,20 @@ dark_ok = _QP(); dark_ok.setColor(_QP.Window, QColor("#333339"))
 check("dark desktop + light palette -> Kosmos dark palette",
       choose_palette(True, light).color(_QP.Window).name() == "#2e3440")
 check("palette kept when it already matches", choose_palette(True, dark_ok) is dark_ok and choose_palette(False, light) is light)
+
+# --- terms of use (the Windows build asks before first use) --------------------------------------------------------
+check("the terms aren't accepted to begin with", not dialogs.terms_accepted())
+td = dialogs.TermsDialog()
+check("the terms dialog shows the terms, and I agree is off until the box is ticked",
+      "NO WARRANTY" in td.text.toPlainText() and not td.ok.isEnabled() and td.quit.isEnabled())
+td.agree.setChecked(True)
+check("ticking the box enables I agree", td.ok.isEnabled())
+td.ok.click()
+check("agreeing is remembered, so the dialog isn't shown again", td.result() == QDialog.Accepted and dialogs.terms_accepted())
+td2 = dialogs.TermsDialog(); td2.quit.click()
+check("Quit declines without changing the answer", td2.result() == QDialog.Rejected and dialogs.terms_accepted())
+dialogs.settings().setValue("terms/accepted", "0000-00-00")
+check("a new version of the terms asks again", not dialogs.terms_accepted())
 
 # --- single-instance handoff (on a private socket, never the real app's) ------------------------------------------
 from kosmicpdf import app as appmod  # noqa: E402
