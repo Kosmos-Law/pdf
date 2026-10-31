@@ -35,6 +35,11 @@
     <color type="primary" scheme_preference="dark">#2e3440</color>
   </branding>
   <releases>
+    <release version="0.3.1" date="2026-10-31">
+      <description>
+        <p>Kosmic PDF now runs on Windows too: an installer, with OCR and PDF/A included, is at kosmos.law/pdf. Opening a PDF from the file manager still goes to the running window on every system.</p>
+      </description>
+    </release>
     <release version="0.3.0" date="2026-10-30">
       <description>
         <p>Exhibit labels. The Exhibit Label tool (L) places a labelled sticker on the page: choose a caption such as "Plaintiff Exhibit", the number or letter, a pale background colour and a size, watch the label follow the pointer, and click to place it. Labels can be dragged to a new spot, edited with a double-click, and removed with their corner button; the next label offers the next number or letter. Save your own label presets (caption, colour and size), and they stay available across files.</p>
