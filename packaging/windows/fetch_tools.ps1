@@ -3,10 +3,12 @@
 #
 #     pwsh packaging/windows/fetch_tools.ps1
 #
-# Both come as NSIS installers (there are no plain archives), run silently into a
-# temporary folder; only the pieces OCRmyPDF needs are kept: the two programs, their
-# libraries, and English plus orientation detection for Tesseract. The checksums pin the
-# exact files.
+# Both come as NSIS installers (there are no plain archives). 7-Zip can unpack an NSIS
+# installer, which is more predictable than running it, so that is tried first; where
+# 7-Zip can't (the Ghostscript installer, with some 7-Zip versions), the installer is run
+# silently and its files found. Only the pieces OCRmyPDF needs are kept: the two
+# programs, their libraries, and English plus orientation detection for Tesseract. The
+# checksums pin the exact files.
 $ErrorActionPreference = "Stop"
 $here = Split-Path -Parent $MyInvocation.MyCommand.Path
 $tools = Join-Path $here "tools"
@@ -28,18 +30,39 @@ function Fetch($name, $url, $sha256) {
     return $file
 }
 
-# /S installs silently, into the folder after /D= (which must be the last argument, unquoted).
-function InstallSilently($setup, $dir) {
+# Unpack an installer with 7-Zip into $dir, or failing that run it silently (/S installs
+# into the folder after /D=, which must be the last argument, unquoted). Returns the
+# folder that holds $marker (a file the install must contain), wherever it landed.
+function Unpack($name, $setup, $dir, $marker) {
     if (Test-Path $dir) { Remove-Item -Recurse -Force $dir }
-    $p = Start-Process -Wait -PassThru -FilePath $setup -ArgumentList "/S", "/D=$dir"
-    if ($p.ExitCode -ne 0) { throw "$setup exited with $($p.ExitCode)" }
+    & 7z x -y "-o$dir" $setup *> (Join-Path $tmp "$name-7z.log")
+    Write-Host "7z exit code $LASTEXITCODE (1 is warnings only)"
+    $found = Get-ChildItem -Path $dir -Recurse -Filter $marker -ErrorAction SilentlyContinue | Select-Object -First 1
+    if (-not $found) {
+        Write-Host "7-Zip didn't unpack $marker; running the installer silently"
+        if (Test-Path $dir) { Remove-Item -Recurse -Force $dir }
+        $p = Start-Process -Wait -PassThru -FilePath $setup -ArgumentList "/S", "/D=$dir"
+        Write-Host "installer exit code $($p.ExitCode)"
+        $places = @($dir, "$env:ProgramFiles\gs", "$env:ProgramFiles\Tesseract-OCR", "${env:ProgramFiles(x86)}\gs", "$env:LOCALAPPDATA\Programs")
+        foreach ($place in $places) {
+            if (Test-Path $place) {
+                $found = Get-ChildItem -Path $place -Recurse -Filter $marker -ErrorAction SilentlyContinue | Select-Object -First 1
+                if ($found) { break }
+            }
+        }
+    }
+    if (-not $found) {
+        Write-Host "Contents of $tmp and Program Files:"
+        Get-ChildItem $tmp | ForEach-Object { "  $($_.Name)" }
+        Get-ChildItem $env:ProgramFiles | ForEach-Object { "  $($_.Name)" }
+        throw "$name: $marker not found after unpacking $setup"
+    }
+    Write-Host "$name files at $($found.DirectoryName)"
+    return $found.DirectoryName
 }
 
-if (Test-Path $tools) { Remove-Item -Recurse -Force $tools }
-
 Write-Host "==> Tesseract"
-$tessDir = Join-Path $tmp "tesseract-install"
-InstallSilently (Fetch "tesseract" $tesseractUrl $tesseractSha) $tessDir
+$tessDir = Unpack "tesseract" (Fetch "tesseract" $tesseractUrl $tesseractSha) (Join-Path $tmp "tesseract-install") "tesseract.exe"
 $dest = Join-Path $tools "tesseract"
 New-Item -ItemType Directory -Force (Join-Path $dest "tessdata") | Out-Null
 Copy-Item (Join-Path $tessDir "tesseract.exe") $dest
@@ -56,8 +79,8 @@ $env:TESSDATA_PREFIX = Join-Path $dest "tessdata"
 if ($LASTEXITCODE -ne 0) { throw "tesseract.exe does not run" }
 
 Write-Host "==> Ghostscript"
-$gsDir = Join-Path $tmp "gs-install"
-InstallSilently (Fetch "ghostscript" $gsUrl $gsSha) $gsDir
+# The marker is in bin\; the Ghostscript folder is the one above it.
+$gsDir = Split-Path -Parent (Unpack "ghostscript" (Fetch "ghostscript" $gsUrl $gsSha) (Join-Path $tmp "gs-install") "gswin64c.exe")
 $dest = Join-Path $tools "gs"
 New-Item -ItemType Directory -Force (Join-Path $dest "bin") | Out-Null
 Copy-Item (Join-Path $gsDir "bin\gswin64c.exe") (Join-Path $dest "bin")
