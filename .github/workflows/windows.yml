@@ -71,6 +71,12 @@ jobs:
           $code = $LASTEXITCODE
           Get-Content pyinstaller.log | Select-Object -Last 20
           if ($code -ne 0) { pwsh packaging/windows/annotate.ps1 pyinstaller.log "PyInstaller failed"; exit 1 }
+          if (-not (Test-Path dist\KosmicPDF\tools\tesseract\tesseract.exe)) {
+            Write-Host "The spec's Tree() didn't pack the tools; copying them in"
+            Copy-Item -Recurse packaging\windows\tools dist\KosmicPDF\tools
+          }
+          Get-ChildItem dist\KosmicPDF | ForEach-Object { "  $($_.Name)" }
+          Get-ChildItem -Recurse dist\KosmicPDF\tools -Include *.exe, *.dll, *.traineddata | ForEach-Object { "  $($_.FullName.Substring($PWD.Path.Length + 1))" }
 
       - name: Test the built app
         # The same suite, run inside KosmicPDF.exe (see kosmicpdf_entry.py), on the
@@ -98,7 +104,9 @@ jobs:
           Get-Content ocr-version.log, ocr-version.err.log -ErrorAction SilentlyContinue
           if (-not $ok -or $p.ExitCode -ne 0) { pwsh packaging/windows/annotate.ps1 ocr-version.err.log "ocrmypdf.exe --version failed or hung"; exit 1 }
 
-          $p = Start-Process -PassThru -NoNewWindow -FilePath "$app\ocrmypdf.exe" -ArgumentList "--use-threads", "-l", "eng", "--output-type", "pdf", "tests\samples\scan.png", "$env:RUNNER_TEMP\ocr-direct.pdf" -RedirectStandardOutput ocr-direct.log -RedirectStandardError ocr-direct.err.log
+          & "$app\tools\tesseract\tesseract.exe" --version
+          & "$app\tools\gs\bin\gswin64c.exe" --version
+          $p = Start-Process -PassThru -NoNewWindow -FilePath "$app\ocrmypdf.exe" -ArgumentList "-v", "1", "--use-threads", "-l", "eng", "--output-type", "pdf", "tests\samples\scan.png", "$env:RUNNER_TEMP\ocr-direct.pdf" -RedirectStandardOutput ocr-direct.log -RedirectStandardError ocr-direct.err.log
           $ok = Finished $p 600 "ocrmypdf.exe on a scan"
           Get-Content ocr-direct.log, ocr-direct.err.log -ErrorAction SilentlyContinue | Select-Object -Last 15
           if (-not $ok -or $p.ExitCode -ne 0) { pwsh packaging/windows/annotate.ps1 ocr-direct.err.log "ocrmypdf.exe could not OCR a scan (exit $($p.ExitCode))"; exit 1 }
