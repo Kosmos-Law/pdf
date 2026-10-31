@@ -74,18 +74,39 @@ jobs:
 
       - name: Test the built app
         # The same suite, run inside KosmicPDF.exe (see kosmicpdf_entry.py), on the
-        # files users get.
-        timeout-minutes: 20
+        # files users get. Each piece has its own time limit, so a hang is reported with
+        # the log up to that point rather than killed silently by the job's.
+        timeout-minutes: 30
         env:
           QT_QPA_PLATFORM: offscreen
           KOSMICPDF_TEST_INSTALLED: "1"
           KOSMICPDF_SELFTEST: ${{ github.workspace }}\tests\smoke.py
           KOSMICPDF_SELFTEST_LOG: ${{ github.workspace }}\smoke-built.log
         run: |
-          & dist\KosmicPDF\ocrmypdf.exe --version
-          if ($LASTEXITCODE -ne 0) { Write-Output "::error::ocrmypdf.exe does not run"; exit 1 }
-          $p = Start-Process -Wait -PassThru -FilePath dist\KosmicPDF\KosmicPDF.exe -ArgumentList "$env:RUNNER_TEMP\smoke-built"
+          function Finished($p, $seconds, $what) {
+            if ($p.WaitForExit($seconds * 1000)) { return $true }
+            Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
+            Write-Host "$what was still running after $seconds s and was killed"
+            return $false
+          }
+          $app = "$PWD\dist\KosmicPDF"
+          $env:PATH = "$app;$app\tools\tesseract;$app\tools\gs\bin;$env:PATH"
+          $env:TESSDATA_PREFIX = "$app\tools\tesseract\tessdata"
+
+          $p = Start-Process -PassThru -NoNewWindow -FilePath "$app\ocrmypdf.exe" -ArgumentList "--version" -RedirectStandardOutput ocr-version.log -RedirectStandardError ocr-version.err.log
+          $ok = Finished $p 180 "ocrmypdf.exe --version"
+          Get-Content ocr-version.log, ocr-version.err.log -ErrorAction SilentlyContinue
+          if (-not $ok -or $p.ExitCode -ne 0) { pwsh packaging/windows/annotate.ps1 ocr-version.err.log "ocrmypdf.exe --version failed or hung"; exit 1 }
+
+          $p = Start-Process -PassThru -NoNewWindow -FilePath "$app\ocrmypdf.exe" -ArgumentList "--use-threads", "-l", "eng", "--output-type", "pdf", "tests\samples\scan.png", "$env:RUNNER_TEMP\ocr-direct.pdf" -RedirectStandardOutput ocr-direct.log -RedirectStandardError ocr-direct.err.log
+          $ok = Finished $p 600 "ocrmypdf.exe on a scan"
+          Get-Content ocr-direct.log, ocr-direct.err.log -ErrorAction SilentlyContinue | Select-Object -Last 15
+          if (-not $ok -or $p.ExitCode -ne 0) { pwsh packaging/windows/annotate.ps1 ocr-direct.err.log "ocrmypdf.exe could not OCR a scan (exit $($p.ExitCode))"; exit 1 }
+
+          $p = Start-Process -PassThru -FilePath "$app\KosmicPDF.exe" -ArgumentList "$env:RUNNER_TEMP\smoke-built"
+          $ok = Finished $p 900 "the self-test in KosmicPDF.exe"
           if (Test-Path smoke-built.log) { Get-Content smoke-built.log | Select-Object -Last 3 }
+          if (-not $ok) { pwsh packaging/windows/annotate.ps1 smoke-built.log "The self-test hung inside the built app; the log ends where it stopped"; exit 1 }
           if ($p.ExitCode -ne 0) { pwsh packaging/windows/annotate.ps1 smoke-built.log "The test suite failed inside the built app (exit $($p.ExitCode))"; exit 1 }
 
       - name: Installer

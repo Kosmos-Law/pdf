@@ -357,9 +357,21 @@ check("image has no text before OCR", not img_doc.doc[0].get_text().strip())
 pump(10)
 check("OCR button gets a dot for a scan", img_doc.needs_ocr() and w._badges["ocr"]
       and w.ocr_button.toolButtonStyle() == Qt.ToolButtonTextBesideIcon)
+import time  # noqa: E402
+
+
+def wait_for(job, seconds=300):
+    """Pump until the external job ends (or give up, so a stuck tool fails the test rather than hanging it)."""
+    deadline = time.monotonic() + seconds
+    while job.proc.state() != job.proc.ProcessState.NotRunning:
+        if time.monotonic() > deadline:
+            print(f"FAIL {job.label} still running after {seconds}s; killed. Output so far: {job.log[-6:]}")
+            job.proc.kill()
+        job.proc.waitForFinished(100); pump(5)
+
+
 job = window.ExternalJob(w, it, ["-l", "eng", "--skip-text", "--output-type", "pdf"], "OCR")
-while job.proc.state() != job.proc.ProcessState.NotRunning:
-    job.proc.waitForFinished(100); pump(5)
+wait_for(job)
 pump(20)
 check("OCR adds searchable text", "quick brown fox" in img_doc.doc[0].get_text(), img_doc.doc[0].get_text()[:60])
 check("OCR dot goes once the text is there", not img_doc.needs_ocr() and not w._badges["ocr"])
@@ -367,8 +379,7 @@ check("Save has a dot while there are unsaved changes", img_doc.modified and w._
 
 # --- PDF/A ----------------------------------------------------------------------------------------------------
 job = window.ExternalJob(w, it, ["--skip-text", "--tesseract-timeout", "0", "--output-type", "pdfa-2"], "PDF/A")
-while job.proc.state() != job.proc.ProcessState.NotRunning:
-    job.proc.waitForFinished(100); pump(5)
+wait_for(job)
 pump(20)
 meta = img_doc.doc.xref_get_key(-1, "Root")
 xmp = img_doc.doc.get_xml_metadata()
