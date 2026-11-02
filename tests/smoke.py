@@ -28,7 +28,10 @@ _test_settings = tempfile.mkdtemp(prefix="kosmicpdf-test-settings-")
 for _fmt in (QSettings.IniFormat, QSettings.NativeFormat):
     QSettings.setPath(_fmt, QSettings.UserScope, _test_settings)
 from kosmicpdf.dialogs import settings as _settings  # noqa: E402
-assert _settings().fileName().startswith(_test_settings), "test settings would reach the user's own"
+# By the folder's own (unique) name: Windows spells the rest of the path differently in Qt
+# (forward slashes, long names) and in Python (backslashes, short names like RUNNER~1).
+assert os.path.basename(_test_settings) in _settings().fileName(), \
+    f"test settings would reach the user's own: {_settings().fileName()}"
 QMessageBox.question = staticmethod(lambda *a, **k: QMessageBox.Yes)   # auto-confirm
 results = []
 
