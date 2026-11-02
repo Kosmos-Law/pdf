@@ -594,9 +594,9 @@ def label_files(files, targets, params, position, margin, in_place=False, progre
 
 
 class LabelFilesDialog(QDialog):
-    """Label a set of files, in an order the user sets, into copies named
-    "Exhibit 3 - Contract.pdf", or the files themselves, renamed. Files already labelled
-    are renumbered, so the whole set can be reordered and run again."""
+    """Label a set of files, in an order the user sets: the files themselves, labelled and
+    renamed "Exhibit 3 - Contract.pdf" where they are (the default), or into copies. Files
+    already labelled are renumbered, so the whole set can be reordered and run again."""
 
     def __init__(self, parent, files=(), settings=None):
         super().__init__(parent)
@@ -622,7 +622,7 @@ class LabelFilesDialog(QDialog):
         self.naming.setCurrentIndex(max(0, self.naming.findData(self.settings.value("label_files/naming", "exhibit"))))
         self.copies = QRadioButton("Labelled copies, saved in")
         self.in_place = QRadioButton("The files themselves, labelled and renamed where they are")
-        (self.in_place if self.settings.value("label_files/in_place", "false") == "true" else self.copies).setChecked(True)
+        (self.copies if self.settings.value("label_files/in_place", "true") == "false" else self.in_place).setChecked(True)
         self.folder = QLineEdit()
         browse = QPushButton("Choose…", clicked=self._choose_folder)
         folder_row = QHBoxLayout()
@@ -635,8 +635,8 @@ class LabelFilesDialog(QDialog):
         form.addRow("Position", position_row)
         form.addRow("File names", self.naming)
         form.addRow("", self.example)
-        form.addRow("Write", folder_row)
-        form.addRow("", self.in_place)
+        form.addRow("Write", self.in_place)
+        form.addRow("", folder_row)
         buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
         buttons.button(QDialogButtonBox.Ok).setText("Label Files")
         buttons.accepted.connect(self.accept)

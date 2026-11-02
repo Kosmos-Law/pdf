@@ -18,7 +18,10 @@ POSITIONS = ["Bottom right", "Bottom center", "Bottom left", "Top right", "Top c
 
 
 def settings():
-    return QSettings("kosmicpdf", "kosmicpdf")
+    # In the default format, so that a test run that sets that format and its path (to keep
+    # its settings out of the user's own) is obeyed: QSettings("org", "app") always uses the
+    # native format, whatever the default.
+    return QSettings(QSettings.defaultFormat(), QSettings.UserScope, "kosmicpdf", "kosmicpdf")
 
 
 def stamp_bates(doc, start, prefix, digits, suffix, position, font_size, margin, background):

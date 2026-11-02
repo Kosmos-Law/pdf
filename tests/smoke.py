@@ -24,7 +24,11 @@ app = QApplication(sys.argv)
 from PySide6.QtCore import QSettings  # noqa: E402
 import tempfile  # noqa: E402
 QSettings.setDefaultFormat(QSettings.IniFormat)      # files in a folder, on Windows too (not the registry)
-QSettings.setPath(QSettings.IniFormat, QSettings.UserScope, tempfile.mkdtemp(prefix="kosmicpdf-test-settings-"))
+_test_settings = tempfile.mkdtemp(prefix="kosmicpdf-test-settings-")
+for _fmt in (QSettings.IniFormat, QSettings.NativeFormat):
+    QSettings.setPath(_fmt, QSettings.UserScope, _test_settings)
+from kosmicpdf.dialogs import settings as _settings  # noqa: E402
+assert _settings().fileName().startswith(_test_settings), "test settings would reach the user's own"
 QMessageBox.question = staticmethod(lambda *a, **k: QMessageBox.Yes)   # auto-confirm
 results = []
 
@@ -1232,9 +1236,12 @@ lrows = lambda: [lf.list.list.item(k).text() for k in range(lf.list.list.count()
 check("each file shows the name it will get, and that it has no label yet",
       lrows() == ["Exhibit 1 - Contract.pdf    was Contract.pdf    (no label yet)",
                   "Exhibit 2 - Letter.pdf    was Letter.pdf    (no label yet)"], str(lrows()))
-check("the copies go to an Exhibits folder beside the first file by default, and the example shows the first name",
-      lf.folder.text() == os.path.join(lbl_dir, "Exhibits") and lf.example.text() == "e.g. Exhibit 1 - Contract.pdf"
-      and lf.copies.isChecked() and lf.problem() is None, lf.example.text())
+check("by default the files themselves are labelled and renamed where they are, and the example shows the first name",
+      lf.in_place.isChecked() and not lf.folder.isEnabled() and lf.example.text() == "e.g. Exhibit 1 - Contract.pdf"
+      and lf.targets()[0] == os.path.join(lbl_dir, "Exhibit 1 - Contract.pdf") and lf.problem() is None, lf.example.text())
+lf.copies.setChecked(True); pump()
+check("copies instead go to an Exhibits folder beside the first file", lf.folder.isEnabled()
+      and lf.folder.text() == os.path.join(lbl_dir, "Exhibits") and lf.problem() is None, lf.folder.text())
 lf.list.list.item(1).setSelected(True); lf.list._move(-1)
 check("moving a file up renumbers both", lrows()[0].startswith("Exhibit 1 - Letter.pdf") and lrows()[1].startswith("Exhibit 2 - Contract.pdf"), str(lrows()))
 lf.folder.setText(lbl_dir); lf.naming.setCurrentIndex(lf.naming.findData("keep"))

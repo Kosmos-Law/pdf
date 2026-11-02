@@ -268,7 +268,8 @@ def main():
     # Flatpak always sets XDG_CONFIG_HOME itself, so that can't be used to redirect them.
     if os.environ.get("KOSMICPDF_SETTINGS_DIR"):
         QSettings.setDefaultFormat(QSettings.IniFormat)    # a folder of files, on Windows too (not the registry)
-        QSettings.setPath(QSettings.IniFormat, QSettings.UserScope, os.environ["KOSMICPDF_SETTINGS_DIR"])
+        for fmt in (QSettings.IniFormat, QSettings.NativeFormat):
+            QSettings.setPath(fmt, QSettings.UserScope, os.environ["KOSMICPDF_SETTINGS_DIR"])
     app = QApplication(sys.argv)
     app.setApplicationName("Kosmic PDF (Dev)" if DEV else "Kosmic PDF")   # also ends each window's title
     app.setApplicationVersion(__version__)

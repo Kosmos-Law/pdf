@@ -35,6 +35,11 @@
     <color type="primary" scheme_preference="dark">#2e3440</color>
   </branding>
   <releases>
+    <release version="0.3.4" date="2026-11-02">
+      <description>
+        <p>Label Exhibit Files now labels and renames the files themselves where they are, unless you choose labelled copies instead.</p>
+      </description>
+    </release>
     <release version="0.3.3" date="2026-10-31">
       <description>
         <p>At its first start, Kosmic PDF shows its terms of use (no warranty; use at your own risk) and runs once they are accepted, on Linux as on Windows.</p>
