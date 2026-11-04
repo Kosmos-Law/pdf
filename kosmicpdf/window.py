@@ -57,7 +57,7 @@ LUCIDE = {
     "redact_search": "text-search", "apply_redactions": "check-check", "redact_done": "x", "about": "info",
     "redact_text": "text-select", "redact_area": "square-dashed",
     "mode_select": "text-cursor", "mode_highlight": "highlighter", "mode_typewriter": "type", "mode_redact": "eye-off",
-    "mode_label": "stamp", "label_files": "stamp",
+    "mode_label": "stamp", "label_files": "stamp", "mode_hand": "hand",
 }
 
 
@@ -638,6 +638,8 @@ class MainWindow(QMainWindow):
         self.mode_group = QActionGroup(self)
         for name, text, key, tip in (
                 ("select", "Select", "V", "Select and copy text; click an annotation to move or delete it"),
+                ("hand", "Hand", None, "Drag the page to move it around in the window. With any tool, hold Space "
+                                       "and drag to do the same"),
                 ("highlight", "Highlight", "H", "Drag across text to highlight it, or highlight the selected text"),
                 ("typewriter", "Typewriter", "T", "Click to type text onto the page"),
                 ("redact", "Redact", "R", "Drag a box around content to mark it for redaction"),
@@ -645,7 +647,7 @@ class MainWindow(QMainWindow):
                                                 "and colour, then click where it goes")):
             slot = {"highlight": self.highlight_clicked, "label": self.label_clicked}.get(
                 name, lambda checked=False, n=name: self.set_mode(n))
-            a = A(f"mode_{name}", text, slot, key, tip=f"{tip} ({key})", checkable=True)
+            a = A(f"mode_{name}", text, slot, key, tip=f"{tip} ({key})" if key else tip, checkable=True)
             self.mode_group.addAction(a)
         self.actions_by_name["mode_label"].setIconText("Label")
         self.actions_by_name["mode_select"].setChecked(True)
@@ -671,7 +673,7 @@ class MainWindow(QMainWindow):
         menu("&View", ["zoom_in", "zoom_out", "fit_width", "fit_page", "actual", None, "thumbs"])
         menu("&Pages", ["rotate_left", "rotate_right", "rotate_180", None, "cut_pages", "copy_pages", "paste_pages",
                         "delete_pages", None, "extract", "insert_blank", "insert_file", "select_all_pages"])
-        menu("&Tools", ["mode_select", "mode_highlight", "mode_typewriter", "mode_label", "mode_redact", None,
+        menu("&Tools", ["mode_select", "mode_hand", "mode_highlight", "mode_typewriter", "mode_label", "mode_redact", None,
                         "bates", "bates_files", "label_files", "ocr", "pdfa", "flatten"])
         menu("&Help", ["about"])
         # Qt hears a menu item's shortcut only while its menu is in reach; with no menu bar,
@@ -704,6 +706,7 @@ class MainWindow(QMainWindow):
         tb.addAction(a["rotate_right"])
         tb.addSeparator()
         tb.addAction(a["mode_select"])
+        tb.addAction(a["mode_hand"])
         # Highlight is a split button, as in a word processor: the button highlights, and
         # its arrow chooses the colour, which shows as a stripe under the highlighter.
         colors = QToolButton()
@@ -730,7 +733,7 @@ class MainWindow(QMainWindow):
         button.setPopupMode(QToolButton.InstantPopup)
         tb.addWidget(button)
         # Common commands are icons with tooltips; the tools keep a label so they are easy to find.
-        labelled = {a[n] for n in ("mode_select", "mode_highlight", "mode_typewriter", "mode_label", "ocr")}
+        labelled = {a[n] for n in ("mode_select", "mode_hand", "mode_highlight", "mode_typewriter", "mode_label", "ocr")}
         tb.setToolButtonStyle(Qt.ToolButtonIconOnly)
         for b in tb.findChildren(QToolButton):
             if b.defaultAction() in labelled:

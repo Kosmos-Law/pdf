@@ -7,7 +7,7 @@ from collections import OrderedDict
 
 import pymupdf as fitz
 from PySide6.QtCore import QPointF, QRect, QRectF, QSize, Qt, QTimer, Signal
-from PySide6.QtGui import (QColor, QFont, QFontMetricsF, QGuiApplication, QImage, QPainter, QPen, QPixmap,
+from PySide6.QtGui import (QColor, QCursor, QFont, QFontMetricsF, QGuiApplication, QImage, QPainter, QPen, QPixmap,
                            QTextBlockFormat, QTextCursor)
 from PySide6.QtWidgets import QApplication, QFrame, QMenu, QScrollArea, QTextEdit, QToolButton, QWidget
 
@@ -446,6 +446,10 @@ class PageCanvas(QWidget):
         if not self.view.key_press(e):
             super().keyPressEvent(e)
 
+    def keyReleaseEvent(self, e):
+        if not self.view.key_release(e):
+            super().keyReleaseEvent(e)
+
 
 class PageView(QScrollArea):
     current_page_changed = Signal(int)
@@ -493,6 +497,7 @@ class PageView(QScrollArea):
         self._find_pattern = None     # the search still in progress, if any (see find_more)
         self._find_pages = []         # pages it has yet to look at
         self._press = None            # state for drags
+        self._space_pan = False       # Space is held: the mouse drags the page about, whatever the tool
         self._rubber = None           # (page, QRectF in canvas coords)
         self._move_offset = None
         self.editor = None            # open TypewriterEditor, if any
@@ -813,6 +818,13 @@ class PageView(QScrollArea):
         self.canvas.setFocus()
         if e.button() != Qt.LeftButton:
             return
+        if self.panning():
+            # The hand: the page follows the mouse. Screen coordinates, since the canvas
+            # moves under the mouse as it scrolls.
+            self._press = ("pan", None, e.globalPosition().toPoint(),
+                           self.horizontalScrollBar().value(), self.verticalScrollBar().value())
+            self.canvas.setCursor(Qt.ClosedHandCursor)
+            return
         i = self.page_at(pos)
         self._press = None
         if i is None:
@@ -874,6 +886,11 @@ class PageView(QScrollArea):
             return
         kind, i = self._press[0], self._press[1]
         start = self._press[2]
+        if kind == "pan":
+            moved = e.globalPosition().toPoint() - start
+            self.horizontalScrollBar().setValue(self._press[3] - moved.x())
+            self.verticalScrollBar().setValue(self._press[4] - moved.y())
+            return
         if kind in ("rect", "hlrect"):
             self._rubber = (i, QRectF(start, pos).normalized() & QRectF(self.page_rects[i]))
         elif kind == "move":
@@ -900,6 +917,9 @@ class PageView(QScrollArea):
             return
         kind, i = self._press[0], self._press[1]
         self._press = None
+        if kind == "pan":
+            self._update_cursor(e.position().toPoint())
+            return
         if kind in ("rect", "hlrect"):
             rect = self._rubber[1] if self._rubber else QRectF()
             self._rubber = None
@@ -950,8 +970,8 @@ class PageView(QScrollArea):
     def mouse_double(self, e):
         pos = e.position().toPoint()
         i = self.page_at(pos)
-        if i is None:
-            return
+        if i is None or self.panning():
+            return                                # the hand only moves the page, so it opens nothing
         pt = self.to_pdf(i, pos)
         a = self.annot_at(i, pt)
         if a and a.type[0] == fitz.PDF_ANNOT_FREE_TEXT:
@@ -974,7 +994,16 @@ class PageView(QScrollArea):
             self._press = ("word", i, pos, lo, hi)
             self.canvas.update()
 
+    def panning(self):
+        """Whether a press drags the page about: the Hand tool, or Space held with any tool."""
+        return self.mode == "hand" or self._space_pan
+
     def _update_cursor(self, pos):
+        if self.panning():
+            self.hover_marks(None)
+            self.canvas.setCursor(Qt.ClosedHandCursor if self._press and self._press[0] == "pan"
+                                  else Qt.OpenHandCursor)
+            return
         cursors = {"select": Qt.IBeamCursor, "highlight": Qt.IBeamCursor,
                    "typewriter": Qt.IBeamCursor, "redact": Qt.CrossCursor, "label": Qt.CrossCursor}
         i = self.page_at(pos)
@@ -991,6 +1020,12 @@ class PageView(QScrollArea):
         self.canvas.setCursor(cur)
 
     def key_press(self, e):
+        if e.key() == Qt.Key_Space and not (e.modifiers() & ~Qt.KeypadModifier):
+            # Holding Space borrows the hand, as in Acrobat; letting go gives the tool back.
+            if not e.isAutoRepeat() and not self._space_pan:
+                self._space_pan = True
+                self._update_cursor(self.canvas.mapFromGlobal(QCursor.pos()))
+            return True
         if e.key() in (Qt.Key_Delete, Qt.Key_Backspace) and self.sel_annot:
             self.delete_selected_annot()
             return True
@@ -999,6 +1034,15 @@ class PageView(QScrollArea):
                 self.mode_requested.emit("select")    # stop placing the label
                 return True
             self.clear_selection()
+            return True
+        return False
+
+    def key_release(self, e):
+        if e.key() == Qt.Key_Space:
+            if not e.isAutoRepeat():
+                self._space_pan = False
+                if not (self._press and self._press[0] == "pan"):   # a drag in progress finishes as a pan
+                    self._update_cursor(self.canvas.mapFromGlobal(QCursor.pos()))
             return True
         return False
 

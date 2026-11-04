@@ -195,6 +195,49 @@ w.set_mode("select")
 pump()
 w.grab().save(os.path.join(OUT, "02-annotated.png"))
 
+# --- the hand: drag the page about, with the Hand tool or with Space held ------------------------------
+fit0, zoom0 = v.fit, v.zoom
+v.set_zoom(2.5); v.go_to_page(1); pump()
+hb, vb = v.horizontalScrollBar(), v.verticalScrollBar()
+hb.setValue(hb.maximum() // 2); pump()
+annots_before = sum(len(list(pg.annots())) for pg in t.pdoc.doc)
+
+
+def pan(dx, dy):
+    """Press in the window, move the mouse by (dx, dy) on the screen, and let go. The canvas
+    scrolls under the mouse, so each event's canvas position is worked out from the viewport."""
+    vp = v.viewport().rect().center()
+    at = lambda q: v.canvas.mapFrom(v.viewport(), q)  # noqa: E731
+    start = (hb.value(), vb.value())
+    mouse(v.canvas, "press", at(vp))
+    for k in (1, 2, 3):
+        mouse(v.canvas, "move", at(vp + QPoint(dx * k // 3, dy * k // 3)))
+    mouse(v.canvas, "release", at(vp + QPoint(dx, dy))); pump()
+    return hb.value() - start[0], vb.value() - start[1]
+
+
+w.set_mode("hand")
+check("the Hand tool is on the toolbar with its label, and in the Tools menu",
+      w.actions_by_name["mode_hand"].isChecked() and v.mode == "hand"
+      and any(b.defaultAction() is w.actions_by_name["mode_hand"] and b.toolButtonStyle() == Qt.ToolButtonTextBesideIcon
+              for b in w.toolbar.findChildren(window.QToolButton)))
+v.canvas.setFocus(); mouse(v.canvas, "move", v.canvas.mapFrom(v.viewport(), v.viewport().rect().center()))
+check("the hand shows an open hand over the page", v.canvas.cursor().shape() == Qt.OpenHandCursor)
+moved = pan(-120, -90)
+check("dragging with the hand moves the page with the mouse, both ways", moved == (120, 90), str(moved))
+check("the hand leaves the document and the selection alone",
+      sum(len(list(pg.annots())) for pg in t.pdoc.doc) == annots_before and v.sel is None and v.sel_annot is None)
+w.set_mode("select"); v.canvas.setFocus(); pump()
+QTest.keyPress(v.canvas, Qt.Key_Space); pump()
+check("holding Space borrows the hand while keeping Select", v.panning() and v.mode == "select"
+      and v.canvas.cursor().shape() == Qt.OpenHandCursor)
+moved = pan(60, 45)
+check("dragging with Space held moves the page and selects no text", moved == (-60, -45) and v.sel is None, str(moved))
+QTest.keyRelease(v.canvas, Qt.Key_Space); pump()
+mouse(v.canvas, "move", v.page_rects[1].center()); pump()
+check("letting go of Space gives Select back", not v.panning() and v.canvas.cursor().shape() != Qt.OpenHandCursor)
+v.set_zoom(zoom0, fit=fit0); pump()
+
 # --- move and delete an annotation ------------------------------------------------------------------
 v.go_to_page(0); pump()
 p0 = t.pdoc.doc[0]
