@@ -732,8 +732,8 @@ class MainWindow(QMainWindow):
         button.setMenu(self.main_menu)
         button.setPopupMode(QToolButton.InstantPopup)
         tb.addWidget(button)
-        # Common commands are icons with tooltips; the tools keep a label so they are easy to find.
-        labelled = {a[n] for n in ("mode_select", "mode_hand", "mode_highlight", "mode_typewriter", "mode_label", "ocr")}
+        # Common commands are icons with tooltips; most tools keep a label so they are easy to find (Move, a hand, needs none).
+        labelled = {a[n] for n in ("mode_select", "mode_highlight", "mode_typewriter", "mode_label", "ocr")}
         tb.setToolButtonStyle(Qt.ToolButtonIconOnly)
         for b in tb.findChildren(QToolButton):
             if b.defaultAction() in labelled:
