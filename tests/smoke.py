@@ -217,8 +217,10 @@ def pan(dx, dy):
 
 
 w.set_mode("hand")
-check("the Hand tool is on the toolbar with its label, and in the Tools menu",
-      w.actions_by_name["mode_hand"].isChecked() and v.mode == "hand"
+tb_actions = [x for x in w.toolbar.actions() if x.isVisible()]
+check("the Move tool is on the toolbar with its label, just left of Select",
+      w.actions_by_name["mode_hand"].isChecked() and v.mode == "hand" and w.actions_by_name["mode_hand"].text() == "Move"
+      and tb_actions.index(w.actions_by_name["mode_hand"]) + 1 == tb_actions.index(w.actions_by_name["mode_select"])
       and any(b.defaultAction() is w.actions_by_name["mode_hand"] and b.toolButtonStyle() == Qt.ToolButtonTextBesideIcon
               for b in w.toolbar.findChildren(window.QToolButton)))
 v.canvas.setFocus(); mouse(v.canvas, "move", v.canvas.mapFrom(v.viewport(), v.viewport().rect().center()))

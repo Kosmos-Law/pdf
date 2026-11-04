@@ -995,7 +995,7 @@ class PageView(QScrollArea):
             self.canvas.update()
 
     def panning(self):
-        """Whether a press drags the page about: the Hand tool, or Space held with any tool."""
+        """Whether a press drags the page about: the Move tool, or Space held with any tool."""
         return self.mode == "hand" or self._space_pan
 
     def _update_cursor(self, pos):

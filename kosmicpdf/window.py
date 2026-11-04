@@ -637,9 +637,9 @@ class MainWindow(QMainWindow):
 
         self.mode_group = QActionGroup(self)
         for name, text, key, tip in (
-                ("select", "Select", "V", "Select and copy text; click an annotation to move or delete it"),
-                ("hand", "Hand", None, "Drag the page to move it around in the window. With any tool, hold Space "
+                ("hand", "Move", None, "Drag the page to move it around in the window. With any tool, hold Space "
                                        "and drag to do the same"),
+                ("select", "Select", "V", "Select and copy text; click an annotation to move or delete it"),
                 ("highlight", "Highlight", "H", "Drag across text to highlight it, or highlight the selected text"),
                 ("typewriter", "Typewriter", "T", "Click to type text onto the page"),
                 ("redact", "Redact", "R", "Drag a box around content to mark it for redaction"),
@@ -673,7 +673,7 @@ class MainWindow(QMainWindow):
         menu("&View", ["zoom_in", "zoom_out", "fit_width", "fit_page", "actual", None, "thumbs"])
         menu("&Pages", ["rotate_left", "rotate_right", "rotate_180", None, "cut_pages", "copy_pages", "paste_pages",
                         "delete_pages", None, "extract", "insert_blank", "insert_file", "select_all_pages"])
-        menu("&Tools", ["mode_select", "mode_hand", "mode_highlight", "mode_typewriter", "mode_label", "mode_redact", None,
+        menu("&Tools", ["mode_hand", "mode_select", "mode_highlight", "mode_typewriter", "mode_label", "mode_redact", None,
                         "bates", "bates_files", "label_files", "ocr", "pdfa", "flatten"])
         menu("&Help", ["about"])
         # Qt hears a menu item's shortcut only while its menu is in reach; with no menu bar,
@@ -705,8 +705,8 @@ class MainWindow(QMainWindow):
         tb.addAction(a["rotate_left"])
         tb.addAction(a["rotate_right"])
         tb.addSeparator()
-        tb.addAction(a["mode_select"])
         tb.addAction(a["mode_hand"])
+        tb.addAction(a["mode_select"])
         # Highlight is a split button, as in a word processor: the button highlights, and
         # its arrow chooses the colour, which shows as a stripe under the highlighter.
         colors = QToolButton()
