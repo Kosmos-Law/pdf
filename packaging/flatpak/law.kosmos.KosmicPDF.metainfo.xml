@@ -35,6 +35,11 @@
     <color type="primary" scheme_preference="dark">#2e3440</color>
   </branding>
   <releases>
+    <release version="0.3.7" date="2026-11-05">
+      <description>
+        <p>In a dark theme, text typed with the Typewriter now shows while you type it. On Windows, the arrows of the font size box, the highlight colour button and the zoom list, and the tabs' close buttons, show again.</p>
+      </description>
+    </release>
     <release version="0.3.6" date="2026-11-05">
       <description>
         <p>A Move tool (the hand) drags the page around in the window, and files now open with it chosen. Holding Space borrows it with any tool.</p>
