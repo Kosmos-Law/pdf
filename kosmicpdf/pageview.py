@@ -174,7 +174,10 @@ class TypewriterEditor(QTextEdit):
         self._done = False
         self._formatting = False
         self.setAcceptRichText(False)
-        self.setStyleSheet("QTextEdit{background:rgba(255,255,225,215);border:1px dashed #3a7bd5;}")
+        # Black, as the saved note will be, whatever the theme: in a dark theme (Windows
+        # dark mode, say) the text and caret would otherwise be near-white on the pale yellow.
+        self.setStyleSheet("QTextEdit{background:rgba(255,255,225,215);border:1px dashed #3a7bd5;color:#000000;"
+                           "selection-background-color:#3a7bd5;selection-color:#ffffff;}")
         self.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.setLineWrapMode(QTextEdit.NoWrap)

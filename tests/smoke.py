@@ -7,7 +7,7 @@ import sys
 
 import pymupdf as fitz
 from PySide6.QtCore import QEvent, QPoint, QPointF, QSize, Qt, QTimer
-from PySide6.QtGui import QGuiApplication, QMouseEvent
+from PySide6.QtGui import QColor, QGuiApplication, QMouseEvent
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication, QDialog, QFileDialog, QMenu, QMessageBox, QToolButton
 
@@ -197,6 +197,18 @@ for pg in (0, 2):
 w.set_mode("select")
 pump()
 w.grab().save(os.path.join(OUT, "02-annotated.png"))
+
+# the box being typed in shows its text in a dark theme too (Windows dark mode made it near-white on pale yellow)
+from kosmicpdf import theme  # noqa: E402
+light_palette = QApplication.palette()
+QApplication.setPalette(theme.kosmos_dark_palette()); pump()
+tw = TypewriterEditor(v.canvas, 0, None, QPointF(40, 40), 16, "MMMM WWWW")
+tw.show(); pump()
+img = tw.grab().toImage()
+inside = [QColor(img.pixel(x, y)).lightness() for x in range(3, img.width() - 3) for y in range(3, img.height() - 3)]
+check("typewriter text is dark on its pale box in a dark theme", min(inside) < 60 and max(inside) > 200,
+      f"darkest {min(inside)}, lightest {max(inside)}")
+tw.close_controls(); QApplication.setPalette(light_palette); pump()
 
 # --- the hand: drag the page about, with the Hand tool or with Space held ------------------------------
 fit0, zoom0 = v.fit, v.zoom
