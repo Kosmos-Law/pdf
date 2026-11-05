@@ -208,7 +208,17 @@ img = tw.grab().toImage()
 inside = [QColor(img.pixel(x, y)).lightness() for x in range(3, img.width() - 3) for y in range(3, img.height() - 3)]
 check("typewriter text is dark on its pale box in a dark theme", min(inside) < 60 and max(inside) > 200,
       f"darkest {min(inside)}, lightest {max(inside)}")
-tw.close_controls(); QApplication.setPalette(light_palette); pump()
+tw.close_controls()
+
+QApplication.setPalette(light_palette); pump()
+import re  # noqa: E402
+urls = re.findall(r'url\("?([^")]*)"?\)', QApplication.instance().styleSheet())
+# Arrows (font size box, highlight colour, zoom list) and the tabs' close buttons are images named
+# in the stylesheet. A backslash in the path (any Windows path, before) is read as an escape, the
+# image fails, and the platform's own arrow shows instead: invisible in Windows dark mode.
+from PySide6.QtGui import QImage  # noqa: E402
+check("the stylesheet's arrow and close images are named by paths a stylesheet can read, and load",
+      len(urls) >= 6 and all("\\" not in u and not QImage(u).isNull() for u in urls), str(urls[:2]))
 
 # --- the hand: drag the page about, with the Hand tool or with Space held ------------------------------
 fit0, zoom0 = v.fit, v.zoom

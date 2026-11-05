@@ -270,7 +270,9 @@ def icon_file(name, color, stroke=2.0):
         svg = svg.replace('stroke-width="2"', f'stroke-width="{stroke}"')
         with open(path, "w", encoding="utf-8") as f:
             f.write(svg)
-    return path
+    # Forward slashes: a stylesheet reads a backslash as an escape, so a Windows path
+    # (C:\Users\...\AppData\...) came out garbled and the arrows it named never showed.
+    return path.replace(os.sep, "/")
 
 
 def stylesheet(c):
@@ -304,8 +306,8 @@ QToolButton[popupMode="2"]::menu-indicator {{ subcontrol-position:center right; 
 QToolButton::menu-button {{ border:none; border-left:1px solid transparent; width:15px;
                            border-top-right-radius:5px; border-bottom-right-radius:5px; }}
 QToolButton::menu-button:hover {{ background:{hover}; border-left-color:{c.line.name()}; }}
-QToolButton::menu-arrow {{ image:url({down}); width:9px; height:9px; }}
-QToolButton::menu-indicator {{ image:url({down}); width:8px; height:8px;
+QToolButton::menu-arrow {{ image:url("{down}"); width:9px; height:9px; }}
+QToolButton::menu-indicator {{ image:url("{down}"); width:8px; height:8px;
                               subcontrol-origin:padding; subcontrol-position:bottom right; }}
 
 QTabWidget::pane {{ border:none; }}
@@ -314,7 +316,7 @@ QTabBar::tab {{ background:transparent; color:{soft}; border:none; border-bottom
                padding:7px 8px 6px 12px; margin:0; }}
 QTabBar::tab:selected {{ background:{c.panel.name()}; color:{t.name()}; border-bottom-color:{c.accent.name()}; }}
 QTabBar::tab:hover:!selected {{ background:{hover}; }}
-QTabBar::close-button {{ image:url({close}); subcontrol-position:right; border-radius:3px;
+QTabBar::close-button {{ image:url("{close}"); subcontrol-position:right; border-radius:3px;
                         margin:2px; padding:1px; }}
 QTabBar::close-button:hover {{ background:{press}; }}
 
@@ -337,7 +339,7 @@ QLineEdit, QComboBox, QSpinBox, QDoubleSpinBox {{ background:{c.field.name()}; c
     selection-background-color:{c.accent.name()}; }}
 QLineEdit:focus, QComboBox:focus, QSpinBox:focus, QDoubleSpinBox:focus {{ border-color:{c.accent.name()}; }}
 QComboBox::drop-down {{ border:none; width:18px; }}
-QComboBox::down-arrow {{ image:url({down}); width:10px; height:10px; }}
+QComboBox::down-arrow {{ image:url("{down}"); width:10px; height:10px; }}
 QComboBox QAbstractItemView {{ background:{c.field.name()}; border:1px solid {c.line.name()};
     selection-background-color:{c.rgba(c.accent, 70)}; selection-color:{t.name()}; outline:none; }}
 QSpinBox, QDoubleSpinBox {{ padding-right:16px; }}
@@ -347,8 +349,8 @@ QSpinBox::down-button, QDoubleSpinBox::down-button {{ subcontrol-origin:border; 
     width:16px; border:none; background:transparent; }}
 QSpinBox::up-button:hover, QDoubleSpinBox::up-button:hover,
 QSpinBox::down-button:hover, QDoubleSpinBox::down-button:hover {{ background:{hover}; }}
-QSpinBox::up-arrow, QDoubleSpinBox::up-arrow {{ image:url({up}); width:8px; height:8px; }}
-QSpinBox::down-arrow, QDoubleSpinBox::down-arrow {{ image:url({down}); width:8px; height:8px; }}
+QSpinBox::up-arrow, QDoubleSpinBox::up-arrow {{ image:url("{up}"); width:8px; height:8px; }}
+QSpinBox::down-arrow, QDoubleSpinBox::down-arrow {{ image:url("{down}"); width:8px; height:8px; }}
 
 QPushButton {{ background:{c.field.name()}; color:{t.name()}; border:1px solid {c.line.name()};
               border-radius:5px; padding:5px 14px; }}
