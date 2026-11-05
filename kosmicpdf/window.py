@@ -498,7 +498,7 @@ class MainWindow(QMainWindow):
         self.resize(1200, 860)
         self.setAcceptDrops(True)
         self.jobs = set()
-        self.mode = "select"
+        self.mode = "hand"                # Move: a file opens ready to be looked through
         self.tabs = QTabWidget()
         self.tabs.setTabBar(DetachableTabBar(self))
         self.tabs.setDocumentMode(True)
@@ -650,7 +650,7 @@ class MainWindow(QMainWindow):
             a = A(f"mode_{name}", text, slot, key, tip=f"{tip} ({key})" if key else tip, checkable=True)
             self.mode_group.addAction(a)
         self.actions_by_name["mode_label"].setIconText("Label")
-        self.actions_by_name["mode_select"].setChecked(True)
+        self.actions_by_name["mode_hand"].setChecked(True)
 
     def build_menus(self):
         """The menus, gathered behind the menu button at the right of the toolbar (or F10)
@@ -1200,6 +1200,9 @@ class MainWindow(QMainWindow):
             self.empty.setText(EMPTY_TEXT)
 
     def open_files(self, files):
+        """Open each file in a tab (or bring forward the tab it is already in). A file that
+        opens puts the window back on the Move tool, ready to look through it."""
+        opened = False
         for path in files:
             path = os.path.abspath(path)
             dialogs.settings().setValue("last_dir", os.path.dirname(path))
@@ -1224,8 +1227,11 @@ class MainWindow(QMainWindow):
                 QMessageBox.warning(self, "Open", f"Could not open {os.path.basename(path)}:\n{exc}")
                 continue
             self.add_doc(pdoc)
+            opened = True
             if pdoc.path:
                 remember_recent(pdoc.path)
+        if opened:
+            self.set_mode("hand")
 
     def fill_recent_menu(self):
         """Rebuilt each time it opens, so every window shows the same, current list."""

@@ -152,6 +152,9 @@ w.tabs.setCurrentWidget(t)
 
 # --- text selection and copy -------------------------------------------------------------------
 v = t.view
+check("an opened file starts on the Move tool", w.mode == "hand" and v.mode == "hand"
+      and w.actions_by_name["mode_hand"].isChecked())
+w.set_mode("select")
 v.set_zoom(1.0)
 pump()
 v.go_to_page(0)
@@ -239,6 +242,13 @@ QTest.keyRelease(v.canvas, Qt.Key_Space); pump()
 mouse(v.canvas, "move", v.page_rects[1].center()); pump()
 check("letting go of Space gives Select back", not v.panning() and v.canvas.cursor().shape() != Qt.OpenHandCursor)
 v.set_zoom(zoom0, fit=fit0); pump()
+w.set_mode("highlight")
+w.open_files([os.path.join(SAMPLES, "scan.png")]); pump()     # an image: opened, but kept out of recent files
+check("opening another file goes back to Move, in every tab", w.mode == "hand"
+      and all(x.view.mode == "hand" for x in w.doc_tabs()), w.mode)
+scan_tab = w.tab
+w.detach_tab(scan_tab); scan_tab.pdoc.doc.close(); scan_tab.deleteLater()    # closed unsaved, without the prompt
+w.tabs.setCurrentWidget(t); w.set_mode("select"); pump()
 
 # --- move and delete an annotation ------------------------------------------------------------------
 v.go_to_page(0); pump()
