@@ -1,4 +1,4 @@
-"""Generate the Kosmic PDF app icon (SVG plus PNGs) into kosmicpdf/icons/app/.
+"""Generate the Kosmos PDF app icon (SVG plus PNGs) into kosmospdf/icons/app/.
 
 A document page (Lucide's file shape, with its cut corner but no fold) in a deepened
 version of the kosmos.law frost-to-amber gradient, carrying the three text lines of
@@ -18,7 +18,7 @@ from PySide6.QtCore import QByteArray, QRectF, Qt
 from PySide6.QtGui import QGuiApplication, QImage, QPainter
 from PySide6.QtSvg import QSvgRenderer
 
-OUT = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "kosmicpdf", "icons", "app")
+OUT = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "kosmospdf", "icons", "app")
 # Kosmos palette (kosmos.law): night for ink; frost and amber, deepened so the page
 # holds its own on light panels.
 NIGHT, FROST, AMBER = "#2e3440", "#6aaabd", "#e2b461"
@@ -83,7 +83,7 @@ def svg(start=FROST, end=AMBER, size=None):
 def main():
     QGuiApplication(sys.argv)
     os.makedirs(OUT, exist_ok=True)
-    for name, colours in (("kosmicpdf", (FROST, AMBER)), ("kosmicpdf-dev", (DEV_LIGHT, DEV_DARK))):
+    for name, colours in (("kosmospdf", (FROST, AMBER)), ("kosmospdf-dev", (DEV_LIGHT, DEV_DARK))):
         with open(os.path.join(OUT, f"{name}.svg"), "w") as f:
             f.write(svg(*colours))
         for size in (16, 24, 32, 48, 64, 128, 256):

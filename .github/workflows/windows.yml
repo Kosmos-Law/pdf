@@ -27,9 +27,9 @@ jobs:
       - name: Version
         id: version
         run: |
-          $v = python -c "import kosmicpdf; print(kosmicpdf.__version__)"
+          $v = python -c "import kosmospdf; print(kosmospdf.__version__)"
           "version=$v" >> $env:GITHUB_OUTPUT
-          Write-Host "Kosmic PDF $v"
+          Write-Host "Kosmos PDF $v"
           if ("${{ github.ref }}".StartsWith("refs/tags/") -and "${{ github.ref_name }}" -ne "v$v") {
             Write-Output "::error::The tag ${{ github.ref_name }} does not match __version__ ($v)"
             exit 1
@@ -67,27 +67,27 @@ jobs:
 
       - name: Build
         run: |
-          pyinstaller --noconfirm --clean packaging/windows/kosmicpdf.spec *> pyinstaller.log
+          pyinstaller --noconfirm --clean packaging/windows/kosmospdf.spec *> pyinstaller.log
           $code = $LASTEXITCODE
           Get-Content pyinstaller.log | Select-Object -Last 20
           if ($code -ne 0) { pwsh packaging/windows/annotate.ps1 pyinstaller.log "PyInstaller failed"; exit 1 }
-          if (-not (Test-Path dist\KosmicPDF\tools\tesseract\tesseract.exe)) {
+          if (-not (Test-Path dist\KosmosPDF\tools\tesseract\tesseract.exe)) {
             Write-Host "The spec's Tree() didn't pack the tools; copying them in"
-            Copy-Item -Recurse packaging\windows\tools dist\KosmicPDF\tools
+            Copy-Item -Recurse packaging\windows\tools dist\KosmosPDF\tools
           }
-          Get-ChildItem dist\KosmicPDF | ForEach-Object { "  $($_.Name)" }
-          Get-ChildItem -Recurse dist\KosmicPDF\tools -Include *.exe, *.dll, *.traineddata | ForEach-Object { "  $($_.FullName.Substring($PWD.Path.Length + 1))" }
+          Get-ChildItem dist\KosmosPDF | ForEach-Object { "  $($_.Name)" }
+          Get-ChildItem -Recurse dist\KosmosPDF\tools -Include *.exe, *.dll, *.traineddata | ForEach-Object { "  $($_.FullName.Substring($PWD.Path.Length + 1))" }
 
       - name: Test the built app
-        # The same suite, run inside KosmicPDF.exe (see kosmicpdf_entry.py), on the
+        # The same suite, run inside KosmosPDF.exe (see kosmospdf_entry.py), on the
         # files users get. Each piece has its own time limit, so a hang is reported with
         # the log up to that point rather than killed silently by the job's.
         timeout-minutes: 30
         env:
           QT_QPA_PLATFORM: offscreen
-          KOSMICPDF_TEST_INSTALLED: "1"
-          KOSMICPDF_SELFTEST: ${{ github.workspace }}\tests\smoke.py
-          KOSMICPDF_SELFTEST_LOG: ${{ github.workspace }}\smoke-built.log
+          KOSMOSPDF_TEST_INSTALLED: "1"
+          KOSMOSPDF_SELFTEST: ${{ github.workspace }}\tests\smoke.py
+          KOSMOSPDF_SELFTEST_LOG: ${{ github.workspace }}\smoke-built.log
         run: |
           function Finished($p, $seconds, $what) {
             if ($p.WaitForExit($seconds * 1000)) { return $true }
@@ -95,7 +95,7 @@ jobs:
             Write-Host "$what was still running after $seconds s and was killed"
             return $false
           }
-          $app = "$PWD\dist\KosmicPDF"
+          $app = "$PWD\dist\KosmosPDF"
           $env:PATH = "$app;$app\tools\tesseract;$app\tools\gs\bin;$env:PATH"
           $env:TESSDATA_PREFIX = "$app\tools\tesseract\tessdata"
 
@@ -111,15 +111,15 @@ jobs:
           Get-Content ocr-direct.log, ocr-direct.err.log -ErrorAction SilentlyContinue | Select-Object -Last 15
           if (-not $ok -or $p.ExitCode -ne 0) { pwsh packaging/windows/annotate.ps1 ocr-direct.err.log "ocrmypdf.exe could not OCR a scan (exit $($p.ExitCode))"; exit 1 }
 
-          $p = Start-Process -PassThru -FilePath "$app\KosmicPDF.exe" -ArgumentList "$env:RUNNER_TEMP\smoke-built"
-          $ok = Finished $p 900 "the self-test in KosmicPDF.exe"
+          $p = Start-Process -PassThru -FilePath "$app\KosmosPDF.exe" -ArgumentList "$env:RUNNER_TEMP\smoke-built"
+          $ok = Finished $p 900 "the self-test in KosmosPDF.exe"
           if (Test-Path smoke-built.log) { Get-Content smoke-built.log | Select-Object -Last 3 }
           if (-not $ok) { pwsh packaging/windows/annotate.ps1 smoke-built.log "The self-test hung inside the built app; the log ends where it stopped"; exit 1 }
           if ($p.ExitCode -ne 0) { pwsh packaging/windows/annotate.ps1 smoke-built.log "The test suite failed inside the built app (exit $($p.ExitCode))"; exit 1 }
 
       - name: Installer
         run: |
-          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" /Q /DAppVersion=${{ steps.version.outputs.version }} packaging\windows\kosmicpdf.iss *> iscc.log
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" /Q /DAppVersion=${{ steps.version.outputs.version }} packaging\windows\kosmospdf.iss *> iscc.log
           $code = $LASTEXITCODE
           Get-Content iscc.log | Select-Object -Last 20
           if ($code -ne 0) { pwsh packaging/windows/annotate.ps1 iscc.log "Inno Setup failed"; exit 1 }
@@ -127,8 +127,8 @@ jobs:
 
       - uses: actions/upload-artifact@v5
         with:
-          name: KosmicPDF-Setup-${{ steps.version.outputs.version }}
-          path: dist/KosmicPDF-Setup-*.exe
+          name: KosmosPDF-Setup-${{ steps.version.outputs.version }}
+          path: dist/KosmosPDF-Setup-*.exe
       - uses: actions/upload-artifact@v5
         if: always()
         with:
@@ -143,6 +143,8 @@ jobs:
         run: |
           $v = "${{ steps.version.outputs.version }}"
           python tools/release_notes.py $v > release-notes.md
-          # An unversioned copy, so https://github.com/Kosmos-Law/pdf/releases/latest/download/KosmicPDF-Setup.exe always fetches the newest.
-          Copy-Item "dist\KosmicPDF-Setup-$v.exe" dist\KosmicPDF-Setup.exe
-          gh release create "${{ github.ref_name }}" --title "Kosmic PDF $v" --notes-file release-notes.md "dist\KosmicPDF-Setup-$v.exe" dist\KosmicPDF-Setup.exe
+          # An unversioned copy, so https://github.com/Kosmos-Law/pdf/releases/latest/download/KosmosPDF-Setup.exe always fetches the newest.
+          Copy-Item "dist\KosmosPDF-Setup-$v.exe" dist\KosmosPDF-Setup.exe
+          # And under the app's former name (Kosmic PDF), so links made before the rename still work.
+          Copy-Item "dist\KosmosPDF-Setup-$v.exe" dist\KosmicPDF-Setup.exe
+          gh release create "${{ github.ref_name }}" --title "Kosmos PDF $v" --notes-file release-notes.md "dist\KosmosPDF-Setup-$v.exe" dist\KosmosPDF-Setup.exe dist\KosmicPDF-Setup.exe

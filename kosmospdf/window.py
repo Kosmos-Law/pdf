@@ -44,7 +44,7 @@ def short_folder(path):
     return os.sep.join(parts[-2:]) if len(parts) > 2 else os.sep.join(parts)
 
 
-# Lucide icon for each action (bundled in kosmicpdf/icons).
+# Lucide icon for each action (bundled in kosmospdf/icons).
 LUCIDE = {
     "open": "folder-open", "save": "save", "save_as": "save", "print": "printer", "close_tab": "x",
     "new_window": "app-window",
@@ -314,7 +314,7 @@ class DocTab(QWidget):
             self.insert_pdf_bytes(data, at)
         elif mime.hasImage():
             img = QGuiApplication.clipboard().image()
-            path = os.path.join(tempfile.mkdtemp(prefix="kosmicpdf-"), "clipboard.png")
+            path = os.path.join(tempfile.mkdtemp(prefix="kosmospdf-"), "clipboard.png")
             img.save(path)
             self.insert_files([path], at)
         elif mime.hasUrls():
@@ -443,7 +443,7 @@ class ExternalJob:
 
     def __init__(self, win, tab, args, label):
         self.win, self.tab, self.label = win, tab, label
-        self.tmp = tempfile.TemporaryDirectory(prefix="kosmicpdf-")
+        self.tmp = tempfile.TemporaryDirectory(prefix="kosmospdf-")
         self.src = os.path.join(self.tmp.name, "in.pdf")
         self.dst = os.path.join(self.tmp.name, "out.pdf")
         with open(self.src, "wb") as f:
@@ -634,7 +634,7 @@ class MainWindow(QMainWindow):
             self.redact_by_group.addAction(a)
         self.redact_by = "text"
         self.actions_by_name["redact_text"].setChecked(True)
-        A("about", "&About Kosmic PDF", self.about)
+        A("about", "&About Kosmos PDF", self.about)
         A("menu", "Menu", lambda: self.menu_button.showMenu(), "F10")
 
         self.mode_group = QActionGroup(self)
@@ -1140,7 +1140,7 @@ class MainWindow(QMainWindow):
         drag.setPixmap(pm)
         drag.setHotSpot(QPoint(30, 10))
         if drag.exec(Qt.MoveAction) == Qt.IgnoreAction and tab.main_window() is self:
-            # Dropped outside every Kosmic PDF window: give it a window of its own.
+            # Dropped outside every Kosmos PDF window: give it a window of its own.
             self.move_tab_to_new_window(tab, QCursor.pos() - QPoint(60, 20))
 
     def accept_tab_drop(self, mime, index=-1):
@@ -1521,7 +1521,7 @@ class MainWindow(QMainWindow):
         if dialogs.ocrmypdf_available():
             return True
         if sys.platform == "win32":
-            how = ("The Windows installer includes them; if they have gone missing, installing Kosmic PDF again "
+            how = ("The Windows installer includes them; if they have gone missing, installing Kosmos PDF again "
                    "from kosmos.law puts them back.")
         else:
             how = "sudo apt install ocrmypdf tesseract-ocr"
@@ -1616,7 +1616,7 @@ class MainWindow(QMainWindow):
             self.statusBar().showMessage("The redacted copy is open in its own tab, not yet saved.", 10000)
 
     def about(self):
-        QMessageBox.about(self, "Kosmic PDF", f"Kosmic PDF {QApplication.instance().applicationVersion()}\n"
+        QMessageBox.about(self, "Kosmos PDF", f"Kosmos PDF {QApplication.instance().applicationVersion()}\n"
                           "A lightweight PDF viewer and editor.\n\n"
                           f"PyMuPDF {fitz.VersionBind}, Qt {qVersion()}\n"
                           "OCR and PDF/A by OCRmyPDF and Tesseract.")

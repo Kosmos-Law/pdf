@@ -1,4 +1,4 @@
-# Kosmic PDF on Windows
+# Kosmos PDF on Windows
 
 The Windows build is a folder made by PyInstaller, wrapped in an Inno Setup installer,
 and it includes OCR and PDF/A conversion: OCRmyPDF (frozen as `ocrmypdf.exe` beside the
@@ -6,13 +6,13 @@ app), Tesseract and Ghostscript. Nothing else needs installing.
 
 ## For users
 
-Download **KosmicPDF-Setup.exe** from https://kosmos.law/pdf/ (or from the
+Download **KosmosPDF-Setup.exe** from https://kosmos.law/pdf/ (or from the
 [releases](https://github.com/Kosmos-Law/pdf/releases) on GitHub) and run it. It
-installs for the current user, without an administrator password, and adds Kosmic PDF
+installs for the current user, without an administrator password, and adds Kosmos PDF
 to the Start menu and to the "Open with" choices for PDFs and images. To make it the
 default for PDFs, pick it under Settings > Apps > Default apps.
 
-The installer shows the terms of use (`kosmicpdf/terms.txt`: no warranty, use at your
+The installer shows the terms of use (`kosmospdf/terms.txt`: no warranty, use at your
 own risk) and installs only once they are accepted; the program shows them again at its
 first start (on every system, not only Windows) and runs only once "I agree" is chosen.
 The answer is kept in the settings under `terms/accepted` with the
@@ -32,18 +32,25 @@ PyInstaller only builds for the system it runs on:
    Ghostscript installers, checks their checksums, runs them silently and keeps the
    pieces OCRmyPDF needs under `packaging/windows/tools/`.
 2. The test suite runs headless in the Python environment, as on Linux.
-3. `pyinstaller packaging/windows/kosmicpdf.spec` freezes `KosmicPDF.exe` and
-   `ocrmypdf.exe` into one folder, `dist/KosmicPDF`, with the tools under `tools/`.
-   `kosmicpdf_entry.py` and `ocrmypdf_entry.py` are the two programs' entry points.
-4. The test suite runs again *inside* `KosmicPDF.exe` (`KOSMICPDF_SELFTEST`, see
-   `kosmicpdf_entry.py`), so what is tested is what ships.
-5. Inno Setup (`kosmicpdf.iss`) makes `dist/KosmicPDF-Setup-<version>.exe`.
+3. `pyinstaller packaging/windows/kosmospdf.spec` freezes `KosmosPDF.exe` and
+   `ocrmypdf.exe` into one folder, `dist/KosmosPDF`, with the tools under `tools/`.
+   `kosmospdf_entry.py` and `ocrmypdf_entry.py` are the two programs' entry points.
+4. The test suite runs again *inside* `KosmosPDF.exe` (`KOSMOSPDF_SELFTEST`, see
+   `kosmospdf_entry.py`), so what is tested is what ships.
+5. Inno Setup (`kosmospdf.iss`) makes `dist/KosmosPDF-Setup-<version>.exe`.
 
 Every push to `main` builds and tests, leaving the installer as a workflow artifact. A
 version tag publishes a GitHub release with the installer attached, under its versioned
-name and as `KosmicPDF-Setup.exe`, so the link
-https://github.com/Kosmos-Law/pdf/releases/latest/download/KosmicPDF-Setup.exe always
-gives the newest; kosmos.law links there.
+name and as `KosmosPDF-Setup.exe`, so the link
+https://github.com/Kosmos-Law/pdf/releases/latest/download/KosmosPDF-Setup.exe always
+gives the newest; kosmos.law links there. It is attached as `KosmicPDF-Setup.exe` too,
+the name from before the rename, so older links still work.
+
+The app was Kosmic PDF until 0.3.7. The installer keeps the same AppId, so it upgrades
+a Kosmic PDF installation in place: it installs into a "Kosmos PDF" folder, removes the
+old folder, shortcuts and Default apps entry, and leaves the old document type
+(`KosmicPDF.Document`) opening the new program, so a choice of it as the PDF app still
+holds. Settings are copied from the old registry key by the app at its first start.
 
 ## Publishing a release
 
@@ -61,11 +68,11 @@ gives the newest; kosmos.law links there.
 
 ## What differs from Linux
 
-Everything in `kosmicpdf/` runs unchanged except these, each gated on `sys.platform`:
+Everything in `kosmospdf/` runs unchanged except these, each gated on `sys.platform`:
 
 - The single-instance handoff (`app.py`): Windows has no Unix sockets, so the running
   copy listens on a loopback TCP port and leaves a note of it (port, a secret, its
-  process id) in `%LOCALAPPDATA%\kosmicpdf\instance.json`. A later launch reads the
+  process id) in `%LOCALAPPDATA%\kosmospdf\instance.json`. A later launch reads the
   note, allows the running copy to take the foreground, sends the files with the
   secret, and waits for "ok", so a stale note can't send files to some other program.
 - Console programs (Tesseract, Ghostscript, OCRmyPDF) are started without a console

@@ -1,6 +1,6 @@
 .venv/
 __pycache__/
-*.kosmicpdf-tmp
+*.kosmospdf-tmp
 build-dir/
 repo/
 .flatpak-builder/

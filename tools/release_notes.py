@@ -9,7 +9,7 @@ import sys
 import xml.etree.ElementTree as ET
 
 root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-tree = ET.parse(os.path.join(root, "packaging", "flatpak", "law.kosmos.KosmicPDF.metainfo.xml"))
+tree = ET.parse(os.path.join(root, "packaging", "flatpak", "law.kosmos.KosmosPDF.metainfo.xml"))
 version = sys.argv[1]
 for rel in tree.iter("release"):
     if rel.get("version") == version:

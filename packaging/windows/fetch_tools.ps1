@@ -1,5 +1,5 @@
 # Stage Tesseract and Ghostscript for the Windows build, into packaging/windows/tools/,
-# from where kosmicpdf.spec copies them into the app folder (tools/tesseract, tools/gs).
+# from where kosmospdf.spec copies them into the app folder (tools/tesseract, tools/gs).
 #
 #     pwsh packaging/windows/fetch_tools.ps1
 #

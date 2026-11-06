@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <component type="desktop-application">
-  <id>law.kosmos.KosmicPDF</id>
-  <name>Kosmic PDF</name>
+  <id>law.kosmos.KosmosPDF</id>
+  <name>Kosmos PDF</name>
   <summary>View, organise, annotate and redact PDFs</summary>
   <developer id="law.kosmos">
     <name>Kosmos</name>
@@ -10,7 +10,7 @@
   <project_license>AGPL-3.0-or-later</project_license>
   <description>
     <p>
-      Kosmic PDF is a lightweight, free and open-source PDF viewer and editor,
+      Kosmos PDF is a lightweight, free and open-source PDF viewer and editor,
       made by Kosmos for law practice.
     </p>
     <ul>
@@ -23,7 +23,11 @@
       <li>Combine files, turn images into PDFs, and flatten annotations</li>
     </ul>
   </description>
-  <launchable type="desktop-id">law.kosmos.KosmicPDF.desktop</launchable>
+  <launchable type="desktop-id">law.kosmos.KosmosPDF.desktop</launchable>
+  <!-- Kosmos PDF was Kosmic PDF, published as law.kosmos.KosmicPDF until version 0.3.7. -->
+  <replaces>
+    <id>law.kosmos.KosmicPDF</id>
+  </replaces>
   <url type="homepage">https://kosmos.law/</url>
   <categories>
     <category>Office</category>

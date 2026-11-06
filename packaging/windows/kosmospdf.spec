@@ -1,16 +1,16 @@
 # -*- mode: python ; coding: utf-8 -*-
-# PyInstaller recipe for the Windows build: one folder (dist/KosmicPDF) holding
-# KosmicPDF.exe, ocrmypdf.exe (OCRmyPDF frozen with its Python dependencies), their
+# PyInstaller recipe for the Windows build: one folder (dist/KosmosPDF) holding
+# KosmosPDF.exe, ocrmypdf.exe (OCRmyPDF frozen with its Python dependencies), their
 # shared libraries under _internal, and Tesseract and Ghostscript under tools/, staged
 # there by the workflow. Run from the repository root:
 #
-#     pyinstaller --noconfirm packaging/windows/kosmicpdf.spec
+#     pyinstaller --noconfirm packaging/windows/kosmospdf.spec
 import os
 
 from PyInstaller.utils.hooks import collect_data_files, collect_submodules, copy_metadata
 
 root = os.path.abspath(os.path.join(SPECPATH, "..", ".."))
-icon = os.path.join(root, "kosmicpdf", "icons", "app", "kosmicpdf.ico")
+icon = os.path.join(root, "kosmospdf", "icons", "app", "kosmospdf.ico")
 tools = os.path.join(SPECPATH, "tools")
 
 # Qt modules the app never imports; PySide6_Essentials ships them and the hooks would
@@ -21,11 +21,11 @@ unused_qt = ["PySide6.QtNetwork", "PySide6.QtQml", "PySide6.QtQuick", "PySide6.Q
              "PySide6.QtHelp", "PySide6.QtUiTools"]
 
 app = Analysis(
-    [os.path.join(SPECPATH, "kosmicpdf_entry.py")],
+    [os.path.join(SPECPATH, "kosmospdf_entry.py")],
     pathex=[root],
-    datas=[(os.path.join(root, "kosmicpdf", "icons"), os.path.join("kosmicpdf", "icons")),
-           (os.path.join(root, "kosmicpdf", "terms.txt"), "kosmicpdf")],
-    # QtTest is only for the self-test (see kosmicpdf_entry.py); it is small.
+    datas=[(os.path.join(root, "kosmospdf", "icons"), os.path.join("kosmospdf", "icons")),
+           (os.path.join(root, "kosmospdf", "terms.txt"), "kosmospdf")],
+    # QtTest is only for the self-test (see kosmospdf_entry.py); it is small.
     hiddenimports=["PySide6.QtTest"],
     excludes=["tkinter", "_tkinter"] + unused_qt,
     noarchive=False,
@@ -34,7 +34,7 @@ app_pyz = PYZ(app.pure)
 app_exe = EXE(
     app_pyz, app.scripts, [],
     exclude_binaries=True,
-    name="KosmicPDF",
+    name="KosmosPDF",
     icon=icon,
     console=False,
     disable_windowed_traceback=False,
@@ -68,6 +68,6 @@ COLLECT(
     app_exe, app.binaries, app.datas,
     ocr_exe, ocr.binaries, ocr.datas,
     *extras,
-    name="KosmicPDF",
+    name="KosmosPDF",
     upx=False,
 )

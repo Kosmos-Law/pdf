@@ -2,7 +2,7 @@
 a caption across the top ("PLAINTIFF'S EXHIBIT") and the exhibit's number or letter large
 beneath it.
 
-A label is a Stamp annotation whose appearance Kosmic PDF draws itself, as vector content
+A label is a Stamp annotation whose appearance Kosmos PDF draws itself, as vector content
 (a filled box with rounded corners and a black border, and Helvetica Bold text sized to
 fit), so it is crisp at any zoom, prints, flattens, and looks the same in every PDF
 viewer. Its caption, number, colour and size are kept in the annotation
@@ -40,6 +40,8 @@ from PySide6.QtWidgets import (QComboBox, QDialog, QDialogButtonBox, QColorDialo
 from .core import load_any
 from .dialogs import FileList, PDFS_AND_IMAGES, POSITIONS, settings as app_settings
 
+# These two keep the app's former name (Kosmic PDF): they are saved inside every labelled
+# PDF, so changing them would leave the labels already out there uneditable.
 LABEL_NAME = "KosmicPDFExhibitLabel"   # the stamp's /Name, which marks it as one of ours
 LABEL_KEY = "KosmicPDFLabel"            # the annotation key holding the label's settings, as JSON
 
@@ -573,7 +575,7 @@ def label_files(files, targets, params, position, margin, in_place=False, progre
             if progress:
                 progress(k, src)
             os.makedirs(os.path.dirname(dst) or ".", exist_ok=True)
-            tmp = dst + ".kosmicpdf-tmp"
+            tmp = dst + ".kosmospdf-tmp"
             had = label_file(src, tmp, dict(params, designation=designation), position, margin)
             temps.append(tmp)
             done.append((dst, designation, had))

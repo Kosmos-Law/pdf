@@ -1,4 +1,4 @@
-# What the Windows build needs beyond requirements.txt (see kosmicpdf.spec and the
+# What the Windows build needs beyond requirements.txt (see kosmospdf.spec and the
 # .github/workflows/windows.yml workflow that runs it).
 pyinstaller==6.22.3
 pyinstaller-hooks-contrib==2026.9

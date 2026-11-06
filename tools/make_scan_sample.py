@@ -139,7 +139,7 @@ def main():
         pix, _ = typeset(html)
         page = pdf.new_page(width=612, height=792)
         page.insert_image(page.rect, stream=scanned(pix, tilt, rng))
-    pdf.set_metadata({"title": "Scanned letter (sample)", "producer": "Kosmic PDF sample generator"})
+    pdf.set_metadata({"title": "Scanned letter (sample)", "producer": "Kosmos PDF sample generator"})
     pdf.save(out, garbage=3, deflate=True)
     print("wrote", out, f"({os.path.getsize(out) // 1024} KB)")
 

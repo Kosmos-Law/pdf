@@ -1,29 +1,36 @@
 #!/bin/sh
-# Build Kosmic PDF as a Flatpak and publish it to a signed repository, ready to
+# Build Kosmos PDF as a Flatpak and publish it to a signed repository, ready to
 # upload to a web server.
 #
 #   tools/flatpak_publish.sh [--url https://kosmos.law/flatpak]
 #
-# Produces, in ~/.cache/kosmicpdf-flatpak/site/ (tools/flatpak_deploy.sh copies it to the servers):
+# Produces, in ~/.cache/kosmospdf-flatpak/site/ (tools/flatpak_deploy.sh copies it to the servers):
 #   repo/                    the signed Flatpak repository (static files)
-#   kosmicpdf.flatpakref     "Install Kosmic PDF": opening it installs the app and
+#   kosmospdf.flatpakref     "Install Kosmos PDF": opening it installs the app and
 #                            subscribes to updates from this repository
 #   kosmos.flatpakrepo       adds the Kosmos repository on its own
-#   kosmicpdf.svg            icon referenced by the two files above
+#   kosmospdf.svg            icon referenced by the two files above
+#   kosmicpdf.flatpakref     the same as kosmospdf.flatpakref, under the app's former
+#                            name, so links to it from before the rename still work
 #
 # Each run adds a new build to the existing repository, so users who installed
 # from the .flatpakref get it as an update. Bump __version__ and add a <release>
 # to the metainfo first.
 #
 # Needs flatpak-builder (sudo apt install flatpak-builder) and the signing key in
-# ~/.local/share/kosmicpdf-signing (keep that folder backed up and private).
+# ~/.local/share/kosmospdf-signing (keep that folder backed up and private).
 set -eu
 
 root="$(dirname "$(dirname "$(readlink -f "$0")")")"
-cache="${KOSMICPDF_FLATPAK_CACHE:-$HOME/.cache/kosmicpdf-flatpak}"
-keydir="${KOSMICPDF_SIGNING_DIR:-$HOME/.local/share/kosmicpdf-signing}"
-url="${KOSMICPDF_FLATPAK_URL:-https://kosmos.law/flatpak}"
-app=law.kosmos.KosmicPDF
+# Kosmos PDF was called Kosmic PDF, and these folders may still have the old name. Use
+# them as they are: the repository must stay the same one, since it holds the old app
+# (law.kosmos.KosmicPDF) too, which users are moved on from (see below).
+pick() { if [ -e "$1" ] || [ ! -e "$2" ]; then echo "$1"; else echo "$2"; fi; }
+cache="${KOSMOSPDF_FLATPAK_CACHE:-$(pick "$HOME/.cache/kosmospdf-flatpak" "$HOME/.cache/kosmicpdf-flatpak")}"
+keydir="${KOSMOSPDF_SIGNING_DIR:-$(pick "$HOME/.local/share/kosmospdf-signing" "$HOME/.local/share/kosmicpdf-signing")}"
+url="${KOSMOSPDF_FLATPAK_URL:-https://kosmos.law/flatpak}"
+app=law.kosmos.KosmosPDF
+old_app=law.kosmos.KosmicPDF     # its ID until 0.3.7, as Kosmic PDF
 branch=stable
 manifest="$root/packaging/flatpak/$app.yml"
 
@@ -55,34 +62,50 @@ nice -n 19 ionice -c 3 flatpak-builder --user --install-deps-from=flathub --forc
     --default-branch="$branch" --repo="$site/repo" --gpg-sign="$key" --gpg-homedir="$GNUPGHOME" \
     "$cache/build-dir" "$manifest"
 
+# The app was published as law.kosmos.KosmicPDF until 0.3.7. Mark the old app and its
+# Debug extension end-of-life, replaced by the new ID: "flatpak update" then offers each
+# user the switch to Kosmos PDF, and Flatpak moves their data (~/.var/app) across.
+# Done once; a ref already marked is left alone.
+for ref in "app/$old_app/x86_64/$branch" "runtime/$old_app.Debug/x86_64/$branch"; do
+    ostree --repo="$site/repo" rev-parse "$ref" >/dev/null 2>&1 || continue
+    if ostree --repo="$site/repo" show --print-metadata-key=ostree.endoflife-rebase "$ref" >/dev/null 2>&1; then
+        continue
+    fi
+    echo "==> Marking $ref as replaced by $app"
+    flatpak build-commit-from --src-ref="$ref" --end-of-life-rebase="$old_app=$app" \
+        --gpg-sign="$key" --gpg-homedir="$GNUPGHOME" "$site/repo" "$ref"
+done
+
 echo "==> Signing the repository index"
 flatpak build-update-repo --generate-static-deltas --prune --prune-depth=5 \
     --title="Kosmos" --default-branch="$branch" \
     --gpg-sign="$key" --gpg-homedir="$GNUPGHOME" "$site/repo"
 
 gpgkey="$(base64 -w0 "$keydir/public.gpg")"
-cp "$root/kosmicpdf/icons/app/kosmicpdf.svg" "$site/kosmicpdf.svg"
-cat > "$site/kosmicpdf.flatpakref" <<EOF
+cp "$root/kosmospdf/icons/app/kosmospdf.svg" "$site/kosmospdf.svg"
+cat > "$site/kosmospdf.flatpakref" <<EOF
 [Flatpak Ref]
 Name=$app
 Branch=$branch
-Title=Kosmic PDF
+Title=Kosmos PDF
 Comment=View, organise, annotate and redact PDFs
 Url=$url/repo/
 SuggestRemoteName=kosmos
 Homepage=https://kosmos.law/
-Icon=$url/kosmicpdf.svg
+Icon=$url/kosmospdf.svg
 RuntimeRepo=https://dl.flathub.org/repo/flathub.flatpakrepo
 IsRuntime=false
 GPGKey=$gpgkey
 EOF
+# Under the former name too, so old links install Kosmos PDF.
+cp "$site/kosmospdf.flatpakref" "$site/kosmicpdf.flatpakref"
 cat > "$site/kosmos.flatpakrepo" <<EOF
 [Flatpak Repo]
 Title=Kosmos
 Comment=Apps from Kosmos
 Url=$url/repo/
 Homepage=https://kosmos.law/
-Icon=$url/kosmicpdf.svg
+Icon=$url/kosmospdf.svg
 GPGKey=$gpgkey
 EOF
 
@@ -96,7 +119,7 @@ rm -rf "$test_inst" "$cache/test-results"
 FLATPAK_USER_DIR="$test_inst" flatpak remote-add --user --gpg-import="$keydir/public.gpg" kosmos-test "file://$site/repo/"
 FLATPAK_USER_DIR="$test_inst" flatpak install --user -y --noninteractive kosmos-test "$app" >/dev/null
 if ! FLATPAK_USER_DIR="$test_inst" nice -n 19 flatpak run --env=QT_QPA_PLATFORM=offscreen \
-        --env=KOSMICPDF_TEST_INSTALLED=1 --env=PYTHONPATH=/app/share/kosmicpdf --command=python3 \
+        --env=KOSMOSPDF_TEST_INSTALLED=1 --env=PYTHONPATH=/app/share/kosmospdf --command=python3 \
         "$app" -P "$root/tests/smoke.py" "$cache/test-results" > "$cache/test-results.log" 2>&1; then
     grep -E "^FAIL|Traceback|Error" "$cache/test-results.log" | head -20
     echo "Tests FAILED in the published build (log: $cache/test-results.log). Do not upload."

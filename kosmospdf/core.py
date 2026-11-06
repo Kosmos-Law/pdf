@@ -13,9 +13,9 @@ import pymupdf as fitz
 from PySide6.QtCore import QBuffer, QByteArray, QIODevice, QMimeData, QObject, Signal
 from PySide6.QtGui import QImageIOHandler, QImageReader
 
-MIME_PAGES = "application/x-kosmicpdf-pages"    # PDF bytes of the dragged/copied pages
-MIME_SOURCE = "application/x-kosmicpdf-source"  # "pid:doc_uid:i,j,k" so a drop knows where pages came from
-MIME_TAB = "application/x-kosmicpdf-tab"        # "pid:id(DocTab)" for dragging tabs between windows
+MIME_PAGES = "application/x-kosmospdf-pages"    # PDF bytes of the dragged/copied pages
+MIME_SOURCE = "application/x-kosmospdf-source"  # "pid:doc_uid:i,j,k" so a drop knows where pages came from
+MIME_TAB = "application/x-kosmospdf-tab"        # "pid:id(DocTab)" for dragging tabs between windows
 
 IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".tif", ".tiff", ".bmp", ".gif", ".webp", ".jxr", ".pnm", ".pbm", ".pgm", ".ppm"}
 PAGE_SIZES = {
@@ -37,7 +37,7 @@ def mark_redaction(page, rect):
     """Mark rect on page for redaction. Once redactions are applied, the content under
     it is removed and a box left in its place (see PdfDocument.redacted_copy). Until then
     the mark is drawn lightly: a faint mauve outline, without the red box and cross MuPDF draws by default
-    (Kosmic PDF lays a see-through wash over it as well; see PageView.paint_overlays)."""
+    (Kosmos PDF lays a see-through wash over it as well; see PageView.paint_overlays)."""
     a = page.add_redact_annot(fitz.Rect(rect), fill=(0, 0, 0))
     a.set_colors(stroke=REDACT_MARK)
     a.set_opacity(0.45)
@@ -337,7 +337,7 @@ class PdfDocument(QObject):
     def save(self, path):
         """Full rewrite with garbage collection, so redacted content does not
         survive in orphaned objects, written atomically next to the target."""
-        tmp = path + ".kosmicpdf-tmp"
+        tmp = path + ".kosmospdf-tmp"
         enc = fitz.PDF_ENCRYPT_KEEP if self.was_encrypted else fitz.PDF_ENCRYPT_NONE
         self.doc.save(tmp, garbage=3, deflate=True, encryption=enc)
         os.replace(tmp, path)

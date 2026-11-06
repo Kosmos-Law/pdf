@@ -1,4 +1,4 @@
-"""Headless end-to-end check of Kosmic PDF. Run:
+"""Headless end-to-end check of Kosmos PDF. Run:
 QT_QPA_PLATFORM=offscreen .venv/bin/python tests/smoke.py OUTDIR
 """
 import os
@@ -11,10 +11,10 @@ from PySide6.QtGui import QColor, QGuiApplication, QMouseEvent
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication, QDialog, QFileDialog, QMenu, QMessageBox, QToolButton
 
-if not os.environ.get("KOSMICPDF_TEST_INSTALLED"):   # set when testing an installed build (e.g. the Flatpak)
+if not os.environ.get("KOSMOSPDF_TEST_INSTALLED"):   # set when testing an installed build (e.g. the Flatpak)
     sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from kosmicpdf import dialogs, window  # noqa: E402
-from kosmicpdf.core import PdfDocument, pages_mime  # noqa: E402
+from kosmospdf import dialogs, window  # noqa: E402
+from kosmospdf.core import PdfDocument, pages_mime  # noqa: E402
 
 OUT = sys.argv[1]
 SAMPLES = os.path.join(os.path.dirname(os.path.abspath(__file__)), "samples")
@@ -24,10 +24,10 @@ app = QApplication(sys.argv)
 from PySide6.QtCore import QSettings  # noqa: E402
 import tempfile  # noqa: E402
 QSettings.setDefaultFormat(QSettings.IniFormat)      # files in a folder, on Windows too (not the registry)
-_test_settings = tempfile.mkdtemp(prefix="kosmicpdf-test-settings-")
+_test_settings = tempfile.mkdtemp(prefix="kosmospdf-test-settings-")
 for _fmt in (QSettings.IniFormat, QSettings.NativeFormat):
     QSettings.setPath(_fmt, QSettings.UserScope, _test_settings)
-from kosmicpdf.dialogs import settings as _settings  # noqa: E402
+from kosmospdf.dialogs import settings as _settings  # noqa: E402
 # By the folder's own (unique) name: Windows spells the rest of the path differently in Qt
 # (forward slashes, long names) and in Python (backslashes, short names like RUNNER~1).
 assert os.path.basename(_test_settings) in _settings().fileName(), \
@@ -39,6 +39,28 @@ results = []
 def check(name, cond, detail=""):
     results.append((name, bool(cond)))
     print(("PASS " if cond else "FAIL ") + name + (f"  [{detail}]" if detail else ""))
+
+
+# Settings saved under the app's former name (Kosmic PDF) are carried across, once, in a
+# folder of their own so the rest of the run starts as before.
+from kosmospdf.dialogs import carry_over_settings  # noqa: E402
+_rename_dir = tempfile.mkdtemp(prefix="kosmospdf-test-rename-")
+QSettings.setPath(QSettings.IniFormat, QSettings.UserScope, _rename_dir)
+_old = QSettings(QSettings.IniFormat, QSettings.UserScope, "kosmicpdf", "kosmicpdf")
+_old.setValue("terms/accepted", "0.3.7"); _old.setValue("recent_files", ["/a.pdf", "/b.pdf"])
+_old.setValue("view/thumbs", False); _old.sync()
+_copied = carry_over_settings()
+_new = _settings()
+_carried = (_copied and _new.value("terms/accepted") == "0.3.7" and _new.value("recent_files") == ["/a.pdf", "/b.pdf"]
+            and _new.value("view/thumbs", True, type=bool) is False
+            and os.path.basename(_rename_dir) in _new.fileName() and "kosmospdf" in _new.fileName())
+_new.setValue("view/thumbs", True); _new.sync()
+_again = carry_over_settings()
+_kept = _settings().value("view/thumbs", False, type=bool) is True and _old.value("terms/accepted") == "0.3.7"
+for _fmt in (QSettings.IniFormat, QSettings.NativeFormat):
+    QSettings.setPath(_fmt, QSettings.UserScope, _test_settings)
+check("settings from Kosmic PDF are carried across to the new name", bool(_carried), _new.fileName())
+check("only once: later changes stay, and the old settings are left as they were", _kept and not _again)
 
 
 def mouse(w, kind, pos, buttons=Qt.LeftButton):
@@ -185,7 +207,7 @@ for pg in (0, 2):
     p = rr.topLeft() + QPoint(100, 60)
     mouse(v.canvas, "press", p); pump()
     ed = v.canvas.findChildren(window.QWidget)
-    from kosmicpdf.pageview import TypewriterEditor  # noqa: E402
+    from kosmospdf.pageview import TypewriterEditor  # noqa: E402
     ed = [e for e in v.canvas.findChildren(TypewriterEditor) if e.isVisible()][0]
     ed.setPlainText("Typed note\nsecond line")
     ed.commit(); pump()
@@ -199,7 +221,7 @@ pump()
 w.grab().save(os.path.join(OUT, "02-annotated.png"))
 
 # the box being typed in shows its text in a dark theme too (Windows dark mode made it near-white on pale yellow)
-from kosmicpdf import theme  # noqa: E402
+from kosmospdf import theme  # noqa: E402
 light_palette = QApplication.palette()
 QApplication.setPalette(theme.kosmos_dark_palette()); pump()
 tw = TypewriterEditor(v.canvas, 0, None, QPointF(40, 40), 16, "MMMM WWWW")
@@ -307,7 +329,7 @@ mouse(v.canvas, "release", r.bottomRight().toPoint() - QPoint(1, 4))
 check("redaction marked", t.pdoc.redaction_count() == 1)
 check("redaction bar counts the marks", w.redact_count.text().startswith("1 area marked"), w.redact_count.text())
 mark = next(t.pdoc.doc[0].annots(types=[fitz.PDF_ANNOT_REDACT]))
-from kosmicpdf.core import REDACT_MARK  # noqa: E402
+from kosmospdf.core import REDACT_MARK  # noqa: E402
 check("a mark is drawn lightly: a faint mauve outline, no cross", mark.colors["stroke"]
       and all(abs(a - b) < 0.01 for a, b in zip(mark.colors["stroke"], REDACT_MARK)) and mark.opacity < 0.5,
       f"{mark.colors} {mark.opacity}")
@@ -347,7 +369,7 @@ mouse(v.canvas, "release", head.bottomRight().toPoint() + QPoint(4, 4))
 check("a box drawn in Area mode is marked", t.pdoc.redaction_count() == 4)
 pg0 = t.pdoc.doc[0]          # annotations stay valid only while their page does
 box = v.to_canvas(0, list(pg0.annots(types=[fitz.PDF_ANNOT_REDACT]))[-1].rect)
-from kosmicpdf.pageview import ShoulderButton  # noqa: E402
+from kosmospdf.pageview import ShoulderButton  # noqa: E402
 mouse(v.canvas, "move", box.center().toPoint(), Qt.NoButton); pump()
 mb = v.mark_button
 check("hovering over a mark shows its shoulder button, the same as a note's",
@@ -429,7 +451,7 @@ d.close()
 
 # --- combine PDF + image ----------------------------------------------------------------------------------
 out = fitz.open()
-from kosmicpdf.core import load_any  # noqa: E402
+from kosmospdf.core import load_any  # noqa: E402
 out.insert_pdf(load_any(os.path.join(work, "second.pdf")))
 out.insert_pdf(load_any(os.path.join(work, "scan.png"), "Letter"))
 check("combine pdf + image", out.page_count == 4 and out[3].rect == fitz.Rect(0, 0, 612, 792))
@@ -494,7 +516,7 @@ w.tabs.setCurrentWidget(t)
 pump(50)
 th = t.thumbs
 check("thumbnail viewport accepts drops", th.viewport().acceptDrops() and th.dragEnabled())
-from kosmicpdf import thumbs as thumbs_mod  # noqa: E402
+from kosmospdf import thumbs as thumbs_mod  # noqa: E402
 started = []
 
 
@@ -512,7 +534,7 @@ for dy in (5, 15, 30, 60):
     mouse(th.viewport(), "move", c + QPoint(0, dy))
 mouse(th.viewport(), "release", c + QPoint(0, 60))
 thumbs_mod.QDrag = real_drag
-check("mouse drag on a thumbnail starts a page drag", started and started[0].hasFormat("application/x-kosmicpdf-pages"))
+check("mouse drag on a thumbnail starts a page drag", started and started[0].hasFormat("application/x-kosmospdf-pages"))
 
 # --- drop mark before the first page, and auto-scroll near the edge ----------------------------------------------
 from PySide6.QtGui import QDragMoveEvent  # noqa: E402
@@ -560,7 +582,7 @@ check("new size applies to the open note", ed.font_size == 18 and v.editor is ed
 mouse(v.canvas, "press", v.page_rects[1].topLeft() + QPoint(300, 500)); pump(20)
 pg1 = t.pdoc.doc[1]
 notes = [a for a in pg1.annots() if a.type[0] == fitz.PDF_ANNOT_FREE_TEXT]
-from kosmicpdf.core import parse_da_fontsize  # noqa: E402
+from kosmospdf.core import parse_da_fontsize  # noqa: E402
 check("clicking the page saves the note at the new size",
       len(notes) == 1 and parse_da_fontsize(t.pdoc.doc, notes[0]) == 18, str([a.info.get("content") for a in notes]))
 if v.editor:
@@ -595,7 +617,7 @@ check("undo brings back the original note, visible", note_on(1)[0] == text0 and 
 w.set_mode("select")
 
 # --- firm highlight colours, eraser, recolour, and selecting highlighted text ---------------------------------
-from kosmicpdf.pageview import HIGHLIGHT_COLORS  # noqa: E402
+from kosmospdf.pageview import HIGHLIGHT_COLORS  # noqa: E402
 
 
 def highlights(i):
@@ -804,7 +826,7 @@ check("Clear empties the list", window.recent_files() == [] and not w.recent_men
 
 # --- dark-mode fallback (for Flatpak, when the desktop theme isn't visible) --------------------------------------
 from PySide6.QtGui import QColor, QPalette as _QP  # noqa: E402
-from kosmicpdf.theme import choose_palette  # noqa: E402
+from kosmospdf.theme import choose_palette  # noqa: E402
 light = _QP(); light.setColor(_QP.Window, QColor("#faf9f8"))
 dark_ok = _QP(); dark_ok.setColor(_QP.Window, QColor("#333339"))
 check("dark desktop + light palette -> Kosmos dark palette",
@@ -826,8 +848,8 @@ dialogs.settings().setValue("terms/accepted", "0000-00-00")
 check("a new version of the terms asks again", not dialogs.terms_accepted())
 
 # --- single-instance handoff (on a private socket, never the real app's) ------------------------------------------
-from kosmicpdf import app as appmod  # noqa: E402
-appmod.SOCKET_PATH = os.path.join(tempfile.mkdtemp(prefix="kosmicpdf-test-sock-"), "s.sock")
+from kosmospdf import app as appmod  # noqa: E402
+appmod.SOCKET_PATH = os.path.join(tempfile.mkdtemp(prefix="kosmospdf-test-sock-"), "s.sock")
 check("no running instance -> handoff declines", appmod.send_to_running(["/x.pdf"]) is False)
 received = []
 server = appmod.InstanceServer(lambda files, token: received.append((files, token)))
@@ -852,7 +874,7 @@ check("on Wayland, the launch's activation token goes along with the files",
       received[-1] == (["/c.pdf"], "wayland-token-123"), str(received[-1]))
 import json as _json  # noqa: E402
 if appmod.WINDOWS:
-    stranger, _ = appmod._connect()         # knows the port but sends no secret: not a launch of Kosmic PDF
+    stranger, _ = appmod._connect()         # knows the port but sends no secret: not a launch of Kosmos PDF
     stranger.sendall(_json.dumps({"files": ["/d.pdf"]}).encode()); stranger.close(); pump(30)
     check("on Windows, a message without the secret is ignored", received[-1] == (["/c.pdf"], "wayland-token-123"))
     os.remove(appmod.SOCKET_PATH)
@@ -864,7 +886,7 @@ else:
 check("app modules don't load QtNetwork", "PySide6.QtNetwork" not in sys.modules)
 os.environ.pop("DESKTOP_STARTUP_ID", None)
 appmod.finish_startup_notification()   # nothing to finish: returns quietly
-from kosmicpdf import x11  # noqa: E402
+from kosmospdf import x11  # noqa: E402
 saved_display = os.environ.pop("DISPLAY", None)
 x11.bring_to_current_workspace(12345)       # no X display (e.g. Wayland, or offscreen): does nothing
 x11.finish_startup_notification("abc_TIME1")
@@ -901,7 +923,7 @@ import colorsys  # noqa: E402
 check("deferred module isn't loaded by an import", type(colorsys) is appmod.DeferredModule)
 check("deferred module loads on first use", colorsys.rgb_to_hsv(1, 0, 0) == (0, 1, 1)
       and type(sys.modules["colorsys"]) is not appmod.DeferredModule)
-from kosmicpdf import theme  # noqa: E402
+from kosmospdf import theme  # noqa: E402
 check("icons drawn only at the sizes shown", theme.icon_sizes() == [12, 16], str(theme.icon_sizes()))
 shutil.copy(os.path.join(work, "second.pdf"), os.path.join(work, "startup.pdf"))   # not open anywhere yet
 w2 = window.MainWindow()
@@ -918,7 +940,7 @@ w2.close()
 pump()
 
 # --- scans without text ---------------------------------------------------------------------------------------
-from kosmicpdf.core import page_needs_ocr  # noqa: E402
+from kosmospdf.core import page_needs_ocr  # noqa: E402
 scan = fitz.open(os.path.join(work, "scanned-letter.pdf"))
 check("sample scan has no text, and every page needs OCR",
       not any(p.get_text().strip() for p in scan) and all(page_needs_ocr(p) for p in scan))
@@ -932,7 +954,7 @@ check("a time budget lets a long check carry on later", mixed.needs_ocr(budget=-
 # --- find bar --------------------------------------------------------------------------------------------------
 import re  # noqa: E402
 import time  # noqa: E402
-from kosmicpdf.pageview import find_in_chars, search_pattern  # noqa: E402
+from kosmospdf.pageview import find_in_chars, search_pattern  # noqa: E402
 
 
 def settle(ms=400):
@@ -1114,7 +1136,7 @@ check("Bates Number Files numbers the files into copies named by Bates number, a
 
 # --- dialogs use Lucide icons -----------------------------------------------------------------------------------
 from PySide6.QtWidgets import QStyle  # noqa: E402
-from kosmicpdf.theme import LucideStyle  # noqa: E402
+from kosmospdf.theme import LucideStyle  # noqa: E402
 lstyle = LucideStyle(app.style().name())
 discard = lstyle.standardIcon(QStyle.SP_DialogDiscardButton)
 question = lstyle.standardIcon(QStyle.SP_MessageBoxQuestion)
@@ -1129,7 +1151,7 @@ check("dialog buttons and message boxes get Lucide icons, drawn once",
       and lstyle.pixelMetric(QStyle.PM_MessageBoxIconSize) == 24, str(question.availableSizes()))
 
 # --- exhibit labels ---------------------------------------------------------------------------------------------
-from kosmicpdf import labels  # noqa: E402
+from kosmospdf import labels  # noqa: E402
 check("Label sits on the toolbar beside the typewriter, in the Tools menu, and L is its key",
       w.actions_by_name["mode_label"] in on_toolbar | {b.defaultAction() for b in w.toolbar.findChildren(QToolButton)}
       and w.actions_by_name["mode_label"].shortcut().toString() == "L"
@@ -1176,7 +1198,7 @@ inside = pm.pixelColor(round((c.left() + 0.08 * c.width() - pr.left()) * dpr), r
 want = QColor(labels.COLORS["Blue"])
 check("it renders in its colour", all(abs(a - b) < 8 for a, b in zip(inside.getRgb()[:3], want.getRgb()[:3])), inside.name())
 ap_xref = int(t.pdoc.doc.xref_get_key(stamps[0].xref, "AP/N")[1].split()[0])
-check("its appearance is Kosmic PDF's own vector drawing", b"HeBo" in t.pdoc.doc.xref_stream(ap_xref)
+check("its appearance is Kosmos PDF's own vector drawing", b"HeBo" in t.pdoc.doc.xref_stream(ap_xref)
       and b"Plaintiff's Exhibit" in t.pdoc.doc.xref_stream(ap_xref))
 # drag it
 cc = c.center().toPoint()
@@ -1400,8 +1422,8 @@ w.tabs.setCurrentWidget(t); pump()
 # --- printing -------------------------------------------------------------------------------------------------
 from PySide6.QtPrintSupport import QPrintDialog, QPrinter  # noqa: E402
 from PySide6.QtGui import QKeySequence, QPageSize  # noqa: E402
-from kosmicpdf.core import mark_redaction  # noqa: E402
-from kosmicpdf import printing  # noqa: E402
+from kosmospdf.core import mark_redaction  # noqa: E402
+from kosmospdf import printing  # noqa: E402
 w.tabs.setCurrentWidget(t); pump()
 pdf_printer = printing.printer()
 pdf_printer.setOutputFormat(QPrinter.PdfFormat)

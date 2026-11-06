@@ -1,6 +1,6 @@
-KOSMIC PDF: TERMS OF USE
+KOSMOS PDF: TERMS OF USE
 
-Kosmic PDF is free software from Kosmos, licensed to you under the GNU Affero General Public License, version 3 or later (the "AGPL"). A copy of the AGPL is installed with the program, and it is at https://www.gnu.org/licenses/agpl-3.0.html. The AGPL governs your rights to use, copy, change and share the program. These terms add nothing to those rights. They state plainly, as the AGPL itself does, that the program comes with no warranty of any kind and that you use it at your own risk.
+Kosmos PDF is free software from Kosmos, licensed to you under the GNU Affero General Public License, version 3 or later (the "AGPL"). A copy of the AGPL is installed with the program, and it is at https://www.gnu.org/licenses/agpl-3.0.html. The AGPL governs your rights to use, copy, change and share the program. These terms add nothing to those rights. They state plainly, as the AGPL itself does, that the program comes with no warranty of any kind and that you use it at your own risk.
 
 1. NO WARRANTY. THE PROGRAM IS PROVIDED "AS IS" AND "AS AVAILABLE", WITHOUT WARRANTY OF ANY KIND, EXPRESS, IMPLIED OR STATUTORY, INCLUDING WITHOUT LIMITATION ANY IMPLIED WARRANTY OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, TITLE, NON-INFRINGEMENT, ACCURACY OR QUIET ENJOYMENT, AND ANY WARRANTY ARISING FROM COURSE OF DEALING OR USAGE OF TRADE. KOSMOS DOES NOT WARRANT THAT THE PROGRAM WILL BE FREE OF ERRORS, THAT IT WILL WORK WITHOUT INTERRUPTION, THAT IT WILL MEET YOUR NEEDS, OR THAT ANY DEFECT WILL BE CORRECTED. THE ENTIRE RISK AS TO THE QUALITY, PERFORMANCE AND RESULTS OF THE PROGRAM IS WITH YOU.
 

@@ -29,14 +29,14 @@ FLATPAK_ID = os.environ.get("FLATPAK_ID")
 DEV = "--dev" in sys.argv
 _runtime = os.environ.get("XDG_RUNTIME_DIR") or tempfile.gettempdir()
 if FLATPAK_ID:
-    SOCKET_PATH = os.path.join(_runtime, "app", FLATPAK_ID, "kosmicpdf.sock")
+    SOCKET_PATH = os.path.join(_runtime, "app", FLATPAK_ID, "kosmospdf.sock")
 elif WINDOWS:
     # Not a socket but a note of where the running copy listens: its port, a secret that
     # proves a caller read this file, and its process id (see _connect).
-    SOCKET_PATH = os.path.join(os.environ.get("LOCALAPPDATA") or _runtime, "kosmicpdf",
+    SOCKET_PATH = os.path.join(os.environ.get("LOCALAPPDATA") or _runtime, "kosmospdf",
                                f"instance{'-dev' if DEV else ''}.json")
 else:
-    SOCKET_PATH = os.path.join(_runtime, f"kosmicpdf{'-dev' if DEV else ''}-{os.getuid()}.sock")
+    SOCKET_PATH = os.path.join(_runtime, f"kosmospdf{'-dev' if DEV else ''}-{os.getuid()}.sock")
 
 
 def _connect():
@@ -71,7 +71,7 @@ def _connect():
 
 
 def send_to_running(files, token=None):
-    """Hand files to an already-running Kosmic PDF. False if none is running. On Wayland,
+    """Hand files to an already-running Kosmos PDF. False if none is running. On Wayland,
     `token` is this launch's activation token (XDG_ACTIVATION_TOKEN), which lets the
     running copy bring its window forward: Wayland gives focus only to a window that
     shows one."""
@@ -84,7 +84,7 @@ def send_to_running(files, token=None):
             s.sendall(json.dumps({"files": files, "token": token, "secret": secret}).encode())
             if WINDOWS:
                 # The port in the note may have been reused by another program since the copy
-                # that wrote it died: only Kosmic PDF answers "ok" (once its event loop gets
+                # that wrote it died: only Kosmos PDF answers "ok" (once its event loop gets
                 # round to it, so this waits longer than the connection did).
                 s.shutdown(socket.SHUT_WR)
                 s.settimeout(5)
@@ -174,7 +174,7 @@ class InstanceServer:
             if isinstance(message, list):      # from a launch of an earlier version: just the files
                 message = {"files": message}
             if self.secret and message.get("secret") != self.secret:
-                return                         # not a launch of Kosmic PDF (it didn't read the note)
+                return                         # not a launch of Kosmos PDF (it didn't read the note)
             try:
                 conn.sendall(b"ok")
             except OSError:
@@ -187,7 +187,7 @@ def app_icon():
     folder = os.path.join(os.path.dirname(os.path.abspath(__file__)), "icons", "app")
     icon = QIcon()
     for size in (16, 24, 32, 48, 64, 128, 256):
-        icon.addFile(os.path.join(folder, f"kosmicpdf{'-dev' if DEV else ''}-{size}.png"))
+        icon.addFile(os.path.join(folder, f"kosmospdf{'-dev' if DEV else ''}-{size}.png"))
     return icon
 
 
@@ -266,19 +266,20 @@ def main():
 
     # For test launches: keep settings (recent files, last folder) out of the user's own.
     # Flatpak always sets XDG_CONFIG_HOME itself, so that can't be used to redirect them.
-    if os.environ.get("KOSMICPDF_SETTINGS_DIR"):
+    if os.environ.get("KOSMOSPDF_SETTINGS_DIR"):
         QSettings.setDefaultFormat(QSettings.IniFormat)    # a folder of files, on Windows too (not the registry)
         for fmt in (QSettings.IniFormat, QSettings.NativeFormat):
-            QSettings.setPath(fmt, QSettings.UserScope, os.environ["KOSMICPDF_SETTINGS_DIR"])
+            QSettings.setPath(fmt, QSettings.UserScope, os.environ["KOSMOSPDF_SETTINGS_DIR"])
     app = QApplication(sys.argv)
-    app.setApplicationName("Kosmic PDF (Dev)" if DEV else "Kosmic PDF")   # also ends each window's title
+    app.setApplicationName("Kosmos PDF (Dev)" if DEV else "Kosmos PDF")   # also ends each window's title
     app.setApplicationVersion(__version__)
-    app.setDesktopFileName(FLATPAK_ID or ("kosmicpdf-dev" if DEV else "kosmicpdf"))   # the installed .desktop file
+    app.setDesktopFileName(FLATPAK_ID or ("kosmospdf-dev" if DEV else "kosmospdf"))   # the installed .desktop file
     app.setWindowIcon(app_icon())
     app.setStyle(LucideStyle(app.style().name()))
     follow_color_scheme(app)
     # Nothing can be done with the program until its terms (no warranty) are accepted.
-    from .dialogs import TermsDialog, terms_accepted
+    from .dialogs import TermsDialog, carry_over_settings, terms_accepted
+    carry_over_settings()
     if not terms_accepted() and not TermsDialog().exec():
         return 0
     if "--new-instance" not in sys.argv:

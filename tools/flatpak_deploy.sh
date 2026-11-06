@@ -1,6 +1,6 @@
 #!/bin/sh
 # Copy the Flatpak repository that tools/flatpak_publish.sh built and tested to a
-# server, so Flatpak can install and update Kosmic PDF from it:
+# server, so Flatpak can install and update Kosmos PDF from it:
 #
 #   tools/flatpak_deploy.sh dev          https://darmok.link/flatpak/  (try a build first)
 #   tools/flatpak_deploy.sh production   https://kosmos.law/flatpak/
@@ -8,7 +8,8 @@
 # The same signed build goes to each, unchanged, so what was tried on dev is
 # exactly what users get. A release: flatpak_publish.sh, then deploy to dev and
 # check it (flatpak update), then deploy to production. The landing page needs no
-# change; it links to <url>/kosmicpdf.flatpakref, which stays put.
+# change; it links to <url>/kosmospdf.flatpakref, which stays put. kosmicpdf.flatpakref,
+# from before the app was renamed, is written as well and installs the same.
 #
 # The build files go first and the repository's index (summary, refs) last, so
 # anyone updating while it copies never sees an index that names files that
@@ -16,9 +17,13 @@
 set -eu
 
 root="$(dirname "$(dirname "$(readlink -f "$0")")")"
-cache="${KOSMICPDF_FLATPAK_CACHE:-$HOME/.cache/kosmicpdf-flatpak}"
-keydir="${KOSMICPDF_SIGNING_DIR:-$HOME/.local/share/kosmicpdf-signing}"
-app=law.kosmos.KosmicPDF
+# Kosmos PDF was called Kosmic PDF, and these folders may still have the old name. Use
+# them as they are: the repository must stay the same one, since it holds the old app
+# (law.kosmos.KosmicPDF) too, which users are moved on from (see flatpak_publish.sh).
+pick() { if [ -e "$1" ] || [ ! -e "$2" ]; then echo "$1"; else echo "$2"; fi; }
+cache="${KOSMOSPDF_FLATPAK_CACHE:-$(pick "$HOME/.cache/kosmospdf-flatpak" "$HOME/.cache/kosmicpdf-flatpak")}"
+keydir="${KOSMOSPDF_SIGNING_DIR:-$(pick "$HOME/.local/share/kosmospdf-signing" "$HOME/.local/share/kosmicpdf-signing")}"
+app=law.kosmos.KosmosPDF
 branch=stable
 
 case "${1:-}" in
@@ -29,40 +34,41 @@ esac
 
 site="$cache/site"
 [ -f "$site/repo/summary" ] || { echo "Nothing to deploy: run tools/flatpak_publish.sh first."; exit 1; }
-version="$(sed -n 's/^__version__ = "\(.*\)"/\1/p' "$root/kosmicpdf/__init__.py")"
+version="$(sed -n 's/^__version__ = "\(.*\)"/\1/p' "$root/kosmospdf/__init__.py")"
 
 # The install files, written for this server's address.
 extra="$(mktemp -d)"
 trap 'rm -rf "$extra"' EXIT
 gpgkey="$(base64 -w0 "$keydir/public.gpg")"
-cp "$root/kosmicpdf/icons/app/kosmicpdf.svg" "$extra/kosmicpdf.svg"
-cat > "$extra/kosmicpdf.flatpakref" <<EOF
+cp "$root/kosmospdf/icons/app/kosmospdf.svg" "$extra/kosmospdf.svg"
+cat > "$extra/kosmospdf.flatpakref" <<EOF
 [Flatpak Ref]
 Name=$app
 Branch=$branch
-Title=Kosmic PDF
+Title=Kosmos PDF
 Comment=View, organise, annotate and redact PDFs
 Url=$url/repo/
 SuggestRemoteName=kosmos
 Homepage=https://kosmos.law/
-Icon=$url/kosmicpdf.svg
+Icon=$url/kosmospdf.svg
 RuntimeRepo=https://dl.flathub.org/repo/flathub.flatpakrepo
 IsRuntime=false
 GPGKey=$gpgkey
 EOF
+cp "$extra/kosmospdf.flatpakref" "$extra/kosmicpdf.flatpakref"   # the former name, for old links
 cat > "$extra/kosmos.flatpakrepo" <<EOF
 [Flatpak Repo]
 Title=Kosmos
 Comment=Apps from Kosmos
 Url=$url/repo/
 Homepage=https://kosmos.law/
-Icon=$url/kosmicpdf.svg
+Icon=$url/kosmospdf.svg
 GPGKey=$gpgkey
 EOF
 # For the landing page, if it wants to show the current version.
 printf '{"app": "%s", "version": "%s", "date": "%s"}\n' "$app" "$version" "$(date -u +%Y-%m-%d)" > "$extra/latest.json"
 
-echo "==> Deploying Kosmic PDF $version to $1 ($host:$dir, $url)"
+echo "==> Deploying Kosmos PDF $version to $1 ($host:$dir, $url)"
 ssh "$host" "mkdir -p '$dir/repo'"
 index="--exclude=/summary* --exclude=/summaries/ --exclude=/refs/ --exclude=/delta-indexes/ --exclude=/config"
 work="--exclude=/tmp/ --exclude=/state/"
@@ -75,6 +81,6 @@ rsync -a $perms --delete $work "$site/repo/" "$host:$dir/repo/"        # then th
 rsync -a $perms "$extra/" "$host:$dir/"
 
 echo "==> Checking $url"
-curl -fsS -o /dev/null "$url/repo/summary" && curl -fsS -o /dev/null "$url/kosmicpdf.flatpakref" \
+curl -fsS -o /dev/null "$url/repo/summary" && curl -fsS -o /dev/null "$url/kosmospdf.flatpakref" \
     || { echo "The files are on the server, but $url doesn't serve them yet (see packaging/flatpak/README.md)."; exit 1; }
-echo "==> Kosmic PDF $version is on $1. Install:  flatpak install --user $url/kosmicpdf.flatpakref"
+echo "==> Kosmos PDF $version is on $1. Install:  flatpak install --user $url/kosmospdf.flatpakref"

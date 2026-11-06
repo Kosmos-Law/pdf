@@ -21,7 +21,23 @@ def settings():
     # In the default format, so that a test run that sets that format and its path (to keep
     # its settings out of the user's own) is obeyed: QSettings("org", "app") always uses the
     # native format, whatever the default.
-    return QSettings(QSettings.defaultFormat(), QSettings.UserScope, "kosmicpdf", "kosmicpdf")
+    return QSettings(QSettings.defaultFormat(), QSettings.UserScope, "kosmospdf", "kosmospdf")
+
+
+def carry_over_settings():
+    """The app was called Kosmic PDF, and kept its settings (accepted terms, recent files,
+    label presets and so on) under "kosmicpdf". The first time it runs under its new name,
+    copy them across, so nothing is asked again or lost. Only while the new place is still
+    empty; the old settings are left as they were. True if anything was copied."""
+    new = settings()
+    if new.allKeys():
+        return False
+    old = QSettings(QSettings.defaultFormat(), QSettings.UserScope, "kosmicpdf", "kosmicpdf")
+    keys = old.allKeys()
+    for k in keys:
+        new.setValue(k, old.value(k))
+    new.sync()
+    return bool(keys)
 
 
 def stamp_bates(doc, start, prefix, digits, suffix, position, font_size, margin, background):
@@ -285,7 +301,7 @@ def number_files(files, folder, naming, start, fields):
         first = n
         n = stamp_bates(doc, n, **fields.values())
         dst = os.path.join(folder, bates_name(f, fields.fmt(first), naming))
-        tmp = dst + ".kosmicpdf-tmp"
+        tmp = dst + ".kosmospdf-tmp"
         doc.save(tmp, garbage=3, deflate=True)
         os.replace(tmp, dst)
         doc.close()
@@ -509,7 +525,7 @@ class PdfaDialog(QDialog):
 
 
 # --- terms of use -----------------------------------------------------------------------------------------------
-# The user accepts kosmicpdf/terms.txt (no warranty, use at your own risk) before the
+# The user accepts kosmospdf/terms.txt (no warranty, use at your own risk) before the
 # program can be used: it shows them at its first start, on every system, and the Windows
 # installer shows them too. Change TERMS_VERSION when the text changes materially, and
 # everyone is asked again.
@@ -535,7 +551,7 @@ class TermsDialog(QDialog):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("Before you use Kosmic PDF")
+        self.setWindowTitle("Before you use Kosmos PDF")
         self.setModal(True)
         self.resize(640, 560)
         self.text = QPlainTextEdit()
@@ -550,7 +566,7 @@ class TermsDialog(QDialog):
         self.agree.toggled.connect(self.ok.setEnabled)
         self.buttons.accepted.connect(self.accept)
         self.buttons.rejected.connect(self.reject)
-        lead = QLabel("Kosmic PDF comes with no warranty, and you use it at your own risk. "
+        lead = QLabel("Kosmos PDF comes with no warranty, and you use it at your own risk. "
                       "Please read these terms; the program can be used once you agree to them.")
         lead.setWordWrap(True)
         lay = QVBoxLayout(self)

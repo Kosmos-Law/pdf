@@ -1,4 +1,4 @@
-"""Entry point of the ocrmypdf.exe that ships beside KosmicPDF.exe on Windows: the
+"""Entry point of the ocrmypdf.exe that ships beside KosmosPDF.exe on Windows: the
 OCRmyPDF command line, frozen with the app so users need not install Python.
 
 OCRmyPDF runs Tesseract and Ghostscript as console programs. Started from a program

@@ -1,4 +1,4 @@
-Kosmic PDF for Windows includes these programs and libraries, each under its own licence:
+Kosmos PDF for Windows includes these programs and libraries, each under its own licence:
 
   Qt and PySide6 (LGPL 3.0)             https://www.qt.io/  https://pyside.org/
   PyMuPDF and MuPDF (AGPL 3.0)          https://pymupdf.io/  https://mupdf.com/
@@ -9,5 +9,5 @@ Kosmic PDF for Windows includes these programs and libraries, each under its own
   Python (PSF licence)                  https://www.python.org/
   Lucide icons (ISC)                    https://lucide.dev/
 
-Kosmic PDF itself is free software under the GNU Affero General Public License,
+Kosmos PDF itself is free software under the GNU Affero General Public License,
 version 3 or later; see LICENSE in this folder. Source: https://github.com/Kosmos-Law/pdf
