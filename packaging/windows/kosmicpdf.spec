@@ -17,7 +17,7 @@ tools = os.path.join(SPECPATH, "tools")
 # otherwise pick up some of their libraries.
 unused_qt = ["PySide6.QtNetwork", "PySide6.QtQml", "PySide6.QtQuick", "PySide6.QtQuickWidgets",
              "PySide6.QtOpenGL", "PySide6.QtOpenGLWidgets", "PySide6.QtSql", "PySide6.QtXml",
-             "PySide6.QtConcurrent", "PySide6.QtDBus", "PySide6.QtPrintSupport", "PySide6.QtDesigner",
+             "PySide6.QtConcurrent", "PySide6.QtDBus", "PySide6.QtDesigner",
              "PySide6.QtHelp", "PySide6.QtUiTools"]
 
 app = Analysis(

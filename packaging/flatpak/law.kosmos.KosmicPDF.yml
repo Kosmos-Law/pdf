@@ -11,6 +11,8 @@ finish-args:
   - --device=dri
   # A PDF editor opens and saves documents anywhere in the user's files.
   - --filesystem=home
+  # Printing: Qt talks to CUPS directly for the list of printers and their options.
+  - --socket=cups
   # Tesseract's built-in data path points at the build tree; tell it where the data is.
   - --env=TESSDATA_PREFIX=/app/share/tessdata
 cleanup:

@@ -14,7 +14,7 @@ from PySide6.QtWidgets import (QApplication, QComboBox, QDoubleSpinBox, QFileDia
                                QProgressDialog, QSizePolicy, QSplitter, QTabBar, QTabWidget,
                                QToolBar, QToolButton, QVBoxLayout, QWidget)
 
-from . import dialogs, labels
+from . import dialogs, labels, printing
 from .core import (MIME_PAGES, MIME_TAB, REDACT_STYLES, PdfDocument, is_image, load_any, mark_redaction, mime_pdf_bytes,
                    pages_mime)
 from .pageview import HIGHLIGHT_COLORS, PageView
@@ -46,7 +46,8 @@ def short_folder(path):
 
 # Lucide icon for each action (bundled in kosmicpdf/icons).
 LUCIDE = {
-    "open": "folder-open", "save": "save", "save_as": "save", "close_tab": "x", "new_window": "app-window",
+    "open": "folder-open", "save": "save", "save_as": "save", "print": "printer", "close_tab": "x",
+    "new_window": "app-window",
     "combine": "combine", "images": "image", "quit": "log-out", "undo": "undo-2", "redo": "redo-2",
     "copy": "copy", "cut": "scissors", "paste": "clipboard-paste", "find": "search", "find_bar": "search",
     "cut_pages": "scissors", "copy_pages": "copy", "paste_pages": "clipboard-paste", "delete_pages": "trash-2",
@@ -575,6 +576,7 @@ class MainWindow(QMainWindow):
         A("open", "&Open…", self.open_dialog, QKeySequence.Open)
         A("save", "&Save", self.save, QKeySequence.Save)
         A("save_as", "Save &As…", self.save_as, QKeySequence.SaveAs)
+        A("print", "&Print…", self.print_doc, QKeySequence.Print)
         A("close_tab", "&Close Tab", lambda: self.tab and self.close_tab(self.tab), QKeySequence.Close)
         A("new_window", "New &Window", lambda: MainWindow().show(), QKeySequence.New)
         A("combine", "Co&mbine Files into PDF…", self.combine)
@@ -667,7 +669,7 @@ class MainWindow(QMainWindow):
         file_menu = menu("&File", ["open"])
         self.recent_menu = file_menu.addMenu("Open &Recent")
         self.recent_menu.aboutToShow.connect(self.fill_recent_menu)
-        for n in ("save", "save_as", None, "combine", "images", None, "new_window", "close_tab", "quit"):
+        for n in ("save", "save_as", None, "print", None, "combine", "images", None, "new_window", "close_tab", "quit"):
             file_menu.addSeparator() if n is None else file_menu.addAction(a[n])
         menu("&Edit", ["undo", "redo", None, "cut", "copy", "paste", "select_all", None, "find", "find_next", "find_prev"])
         menu("&View", ["zoom_in", "zoom_out", "fit_width", "fit_page", "actual", None, "thumbs"])
@@ -1312,6 +1314,34 @@ class MainWindow(QMainWindow):
         tab.update_title()
         self.statusBar().showMessage(f"Saved {path}", 5000)
         return True
+
+    def print_doc(self):
+        t = self.tab
+        if not t:
+            return
+        doc, title = t.pdoc.doc, t.pdoc.title
+        n = t.pdoc.redaction_count()
+        if n:
+            box = QMessageBox(QMessageBox.Question, "Print",
+                              f"{n} area(s) are marked for redaction but not yet removed, so what is under "
+                              "them would still print. Would you like to print with the marked content "
+                              "redacted? The document itself stays as it is.", parent=self)
+            redacted = box.addButton("Print Redacted", QMessageBox.AcceptRole)
+            box.addButton("Print As Marked", QMessageBox.DestructiveRole)
+            box.addButton(QMessageBox.Cancel)
+            box.setDefaultButton(redacted)
+            box.exec()
+            if box.clickedButton() is box.button(QMessageBox.Cancel):
+                return
+            if box.clickedButton() is redacted:
+                doc = t.pdoc.redacted_copy(self.redact_style).doc
+                title = os.path.splitext(title)[0] + " - Redacted.pdf"
+        done = printing.print_dialog(self, doc, title, t.view.current_page, t.thumbs.selected_pages())
+        if done:
+            self.statusBar().showMessage(f"Sent {title} to the printer.", 5000)
+        elif done is None:
+            QMessageBox.warning(self, "Print", "The printer could not be started. Please check that it is "
+                                "connected and turned on, then try again.")
 
     def maybe_save(self, tab):
         if not tab.pdoc.modified:

@@ -1397,6 +1397,94 @@ check("Label Exhibit Files renumbers from the menu, reopens the file that was in
 w.close_tab(next(t_ for t_ in w.doc_tabs() if t_.pdoc.path == a_letter)); pump()
 w.tabs.setCurrentWidget(t); pump()
 
+# --- printing -------------------------------------------------------------------------------------------------
+from PySide6.QtPrintSupport import QPrintDialog, QPrinter  # noqa: E402
+from PySide6.QtGui import QKeySequence, QPageSize  # noqa: E402
+from kosmicpdf.core import mark_redaction  # noqa: E402
+from kosmicpdf import printing  # noqa: E402
+w.tabs.setCurrentWidget(t); pump()
+pdf_printer = printing.printer()
+pdf_printer.setOutputFormat(QPrinter.PdfFormat)
+pdf_printer.setPageSize(QPageSize(QPageSize.Letter))      # the sample's own size, so points line up
+printed = os.path.join(OUT, "printed.pdf")
+pdf_printer.setOutputFileName(printed)
+real_print_exec, real_box_exec = QPrintDialog.exec, QMessageBox.exec
+QPrintDialog.exec = lambda self: QPrintDialog.Accepted
+check("File has Print…, on Ctrl+P", w.actions_by_name["print"].shortcut().matches(QKeySequence("Ctrl+P"))
+      and any(a.text() == "&Print…" for m in w.main_menu.actions() if m.menu() for a in m.menu().actions()))
+t.thumbs.clearSelection()
+from PySide6.QtWidgets import QPushButton, QWidget  # noqa: E402
+seen = {}
+
+
+def look_then_cancel(self):
+    self.show(); pump()
+    buttons = {b.text().replace("&", ""): b for b in self.findChildren(QPushButton) if b.isVisible()}
+    seen["options shown"] = self.findChild(QWidget, "QPrintSettingsOutput").isVisible()
+    seen["buttons"] = sorted(buttons)
+    seen["cancel left of print"] = (buttons["Cancel"].mapTo(self, QPoint(0, 0)).x()
+                                    < buttons["Print"].mapTo(self, QPoint(0, 0)).x())
+    buttons["Cancel"].click()
+    return self.result()
+
+
+QPrintDialog.exec = look_then_cancel
+if os.path.exists(printed):
+    os.remove(printed)
+w.actions_by_name["print"].trigger(); pump()
+check("the print dialog shows its options from the start, with no Options button",
+      seen.get("options shown") and seen.get("buttons") == ["Cancel", "Print", "Properties"], str(seen))
+check("Cancel sits at the left, away from Print", seen.get("cancel left of print"), str(seen))
+check("and Cancel still cancels: nothing is printed", not os.path.exists(printed))
+QPrintDialog.exec = lambda self: QPrintDialog.Accepted
+w.actions_by_name["print"].trigger(); pump()
+out = fitz.open(printed)
+check("Print sends every page, one printed page each", out.page_count == t.pdoc.page_count, str(out.page_count))
+out.close()
+pdf_printer.setPrintRange(QPrinter.PageRange); pdf_printer.setFromTo(2, 3)
+check("a page range prints just those pages", printing.chosen_pages(pdf_printer, t.pdoc.page_count, 0, []) == [1, 2])
+pdf_printer.setPrintRange(QPrinter.AllPages)
+t.thumbs.select_pages([0, 2]); pump()
+w.actions_by_name["print"].trigger(); pump()
+out = fitz.open(printed)
+check("pages selected in the page panel are offered, and printed, as the selection", out.page_count == 2,
+      str(out.page_count))
+out.close()
+t.thumbs.clearSelection()
+# With a redaction mark: the question first; Print Redacted prints with the content gone, the document unchanged.
+t.pdoc.checkpoint()
+secret = t.pdoc.doc[0].search_for("Confidential")[0]
+mark_redaction(t.pdoc.doc[0], secret)
+t.pdoc.edited([0])
+asked = []
+
+
+def answer_redacted(self):
+    asked.append(self.text())
+    for b in self.buttons():
+        if b.text() == "Print Redacted":
+            b.click()
+    return 0
+
+
+QMessageBox.exec = answer_redacted
+w.actions_by_name["print"].trigger(); pump()
+out = fitz.open(printed)
+out_img = out[0].get_pixmap(dpi=72)
+check("with redaction marks, Print asks first", asked and "marked for redaction" in asked[0], str(asked))
+# The page is shrunk to fit inside the printer's margins, and centred: where the marked word lands on paper.
+area = pdf_printer.pageRect(QPrinter.Point)
+pw, ph = t.pdoc.doc[0].rect.width, t.pdoc.doc[0].rect.height
+s = min(area.width() / pw, area.height() / ph)
+cx = round(area.x() + (area.width() - pw * s) / 2 + s * (secret.x0 + secret.x1) / 2)
+cy = round(area.y() + (area.height() - ph * s) / 2 + s * (secret.y0 + secret.y1) / 2)
+check("Print Redacted blacks out the marked content on paper",
+      sum(out_img.pixel(cx, cy)) < 60, str(out_img.pixel(cx, cy)))
+check("and leaves the document itself as it was", t.pdoc.redaction_count() == 1 and "Confidential" in t.pdoc.doc[0].get_text())
+out.close()
+t.pdoc.undo(); pump()
+QPrintDialog.exec, QMessageBox.exec = real_print_exec, real_box_exec
+
 # --- page number field ----------------------------------------------------------------------------------------
 w.tabs.setCurrentWidget(t); pump()
 w.page_box.setText("4")
