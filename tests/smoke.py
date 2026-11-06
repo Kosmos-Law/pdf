@@ -1440,6 +1440,8 @@ seen = {}
 
 
 def look_then_cancel(self):
+    if sys.platform == "win32":
+        return QPrintDialog.Rejected    # the system's own dialog there, which the app leaves as it is
     self.show(); pump()
     buttons = {b.text().replace("&", ""): b for b in self.findChildren(QPushButton) if b.isVisible()}
     seen["options shown"] = self.findChild(QWidget, "QPrintSettingsOutput").isVisible()
@@ -1454,9 +1456,10 @@ QPrintDialog.exec = look_then_cancel
 if os.path.exists(printed):
     os.remove(printed)
 w.actions_by_name["print"].trigger(); pump()
-check("the print dialog shows its options from the start, with no Options button",
-      seen.get("options shown") and seen.get("buttons") == ["Cancel", "Print", "Properties"], str(seen))
-check("Cancel sits at the left, away from Print", seen.get("cancel left of print"), str(seen))
+if sys.platform != "win32":
+    check("the print dialog shows its options from the start, with no Options button",
+          seen.get("options shown") and seen.get("buttons") == ["Cancel", "Print", "Properties"], str(seen))
+    check("Cancel sits at the left, away from Print", seen.get("cancel left of print"), str(seen))
 check("and Cancel still cancels: nothing is printed", not os.path.exists(printed))
 QPrintDialog.exec = lambda self: QPrintDialog.Accepted
 w.actions_by_name["print"].trigger(); pump()
