@@ -39,6 +39,14 @@
     <color type="primary" scheme_preference="dark">#2e3440</color>
   </branding>
   <releases>
+    <release version="0.4.0" date="2026-11-05">
+      <description>
+        <p>Kosmic PDF is now Kosmos PDF. There is nothing you need to do: your settings, recent files and label presets come across, and exhibit labels in files saved before the change can still be edited. On Linux, the update offers to switch to the new name; on Windows, the new installer replaces the old one.</p>
+        <ul>
+          <li>Print (File menu, or Ctrl+P): all pages, the current page, a range, or the pages selected in the page panel, with highlights, notes and exhibit labels just as they look on screen. Pages are shrunk only when they would run past the printer's margins, and a document with content marked for redaction can be printed redacted.</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.3.7" date="2026-11-05">
       <description>
         <p>In a dark theme, text typed with the Typewriter now shows while you type it. On Windows, the arrows of the font size box, the highlight colour button and the zoom list, and the tabs' close buttons, show again.</p>
