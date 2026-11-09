@@ -668,7 +668,7 @@ class MainWindow(QMainWindow):
 
         file_menu = menu("&File", ["open"])
         self.recent_menu = file_menu.addMenu("Open &Recent")
-        self.recent_menu.aboutToShow.connect(self.fill_recent_menu)
+        self.recent_menu.aboutToShow.connect(lambda: self.fill_recent_menu())
         for n in ("save", "save_as", None, "print", None, "combine", "images", None, "new_window", "close_tab", "quit"):
             file_menu.addSeparator() if n is None else file_menu.addAction(a[n])
         menu("&Edit", ["undo", "redo", None, "cut", "copy", "paste", "select_all", None, "find", "find_next", "find_prev"])
@@ -692,6 +692,12 @@ class MainWindow(QMainWindow):
         tb.addSeparator()
         for n in ("open", "save", "ocr"):
             tb.addAction(a[n])
+        # Open is a split button: the button opens a file, and its arrow lists the recent ones.
+        self.open_button = tb.widgetForAction(a["open"])
+        self.open_recent_menu = QMenu(self.open_button)
+        self.open_recent_menu.aboutToShow.connect(lambda: self.fill_recent_menu(self.open_recent_menu))
+        self.open_button.setMenu(self.open_recent_menu)
+        self.open_button.setPopupMode(QToolButton.MenuButtonPopup)
         self.ocr_button = tb.widgetForAction(a["ocr"])
         tb.addSeparator()
         for n in ("undo", "redo"):
@@ -1235,9 +1241,10 @@ class MainWindow(QMainWindow):
         if opened:
             self.set_mode("hand")
 
-    def fill_recent_menu(self):
-        """Rebuilt each time it opens, so every window shows the same, current list."""
-        m = self.recent_menu
+    def fill_recent_menu(self, m=None):
+        """Rebuilt each time it opens, so every window shows the same, current list. It fills
+        File > Open Recent, or another menu (the Open button's arrow) when one is given."""
+        m = m or self.recent_menu
         m.clear()
         files = recent_files()
         if not files:

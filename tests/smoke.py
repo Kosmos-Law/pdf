@@ -846,6 +846,13 @@ n_tabs = w.tabs.count()
 acts[1].trigger(); pump()
 check("choosing a recent file opens it", w.tabs.count() == n_tabs + 1 and w.tab.pdoc.path == extra)
 w.close_tab(w.tab)
+w.fill_recent_menu(); w.fill_recent_menu(w.open_recent_menu)
+check("the Open button's arrow lists the same recent files",
+      w.open_button.popupMode() == QToolButton.MenuButtonPopup and w.open_button.menu() is w.open_recent_menu
+      and [x.text() for x in w.open_recent_menu.actions()] == [x.text() for x in w.recent_menu.actions()])
+[x for x in w.open_recent_menu.actions() if x.toolTip() == extra][0].trigger(); pump()
+check("and choosing one there opens it", w.tabs.count() == n_tabs + 1 and w.tab.pdoc.path == extra)
+w.close_tab(w.tab)
 [a for a in w.recent_menu.actions() if a.text().startswith("Clear")][0].trigger()
 w.fill_recent_menu()
 check("Clear empties the list", window.recent_files() == [] and not w.recent_menu.actions()[0].isEnabled())
