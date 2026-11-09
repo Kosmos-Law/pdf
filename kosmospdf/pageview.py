@@ -22,6 +22,10 @@ FIND_OUTLINE = QColor(176, 132, 0)
 REDACT_WASH = QColor(168, 74, 92, 52)      # over marked areas: mauve, as the redaction bar, and see-through
 REDACT_EDGE = QColor(168, 74, 92, 170)     # the box being drawn around an area
 CACHE_PAGES = 24
+# The zoom steps for the scroll wheel and Zoom In/Out, as in browsers: round numbers, about 10% apart
+# near 100% and wider further out. From a zoom between steps (after Fit Width, say) the next one is used.
+ZOOM_LEVELS = (0.1, 0.25, 0.33, 0.5, 0.67, 0.75, 0.8, 0.9, 1.0, 1.1, 1.25, 1.5, 1.75, 2.0, 2.5, 3.0, 4.0, 5.0,
+               6.0, 8.0)
 def _hex(h):
     return tuple(int(h[k:k + 2], 16) / 255 for k in (1, 3, 5))
 
@@ -482,6 +486,7 @@ class PageView(QScrollArea):
         self.setAcceptDrops(True)
 
         self.zoom = 1.0
+        self._wheel_zoom = 0      # Ctrl+wheel movement not yet amounting to a whole zoom step
         self.fit = "width"            # "width", "page" or None
         self.mode = "select"
         self.font_size = 12.0
@@ -595,9 +600,28 @@ class PageView(QScrollArea):
         self.relayout()
         self.canvas.update()
 
+    def step_zoom(self, steps):
+        """Zoom in (steps > 0) or out by that many of ZOOM_LEVELS."""
+        z = self.zoom
+        for _ in range(abs(steps)):
+            if steps > 0:
+                z = next((lv for lv in ZOOM_LEVELS if lv > z * 1.01), ZOOM_LEVELS[-1])
+            else:
+                z = next((lv for lv in reversed(ZOOM_LEVELS) if lv < z * 0.99), ZOOM_LEVELS[0])
+        self.set_zoom(z)
+
     def wheelEvent(self, e):
         if e.modifiers() & Qt.ControlModifier:
-            self.set_zoom(self.zoom * (1.1 if e.angleDelta().y() > 0 else 1 / 1.1))
+            # One step per standard notch (120 units). Touchpads and smooth wheels send smaller amounts,
+            # which add up until they make a whole notch.
+            dy = e.angleDelta().y()
+            if (dy > 0) != (self._wheel_zoom > 0):
+                self._wheel_zoom = 0      # changing direction starts afresh
+            self._wheel_zoom += dy
+            steps = int(self._wheel_zoom / 120)
+            if steps:
+                self._wheel_zoom -= steps * 120
+                self.step_zoom(steps)
             e.accept()
             return
         super().wheelEvent(e)

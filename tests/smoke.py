@@ -286,6 +286,32 @@ QTest.keyRelease(v.canvas, Qt.Key_Space); pump()
 mouse(v.canvas, "move", v.page_rects[1].center()); pump()
 check("letting go of Space gives Select back", not v.panning() and v.canvas.cursor().shape() != Qt.OpenHandCursor)
 v.set_zoom(zoom0, fit=fit0); pump()
+
+def ctrl_wheel(dy):
+    from PySide6.QtGui import QWheelEvent
+    pos = QPointF(v.viewport().rect().center())
+    app.sendEvent(v.viewport(), QWheelEvent(pos, QPointF(v.viewport().mapToGlobal(pos.toPoint())), QPoint(),
+                                            QPoint(0, dy), Qt.NoButton, Qt.ControlModifier, Qt.NoScrollPhase, False))
+
+
+v.set_zoom(0.87); ctrl_wheel(120); pump()
+z1 = v.zoom
+ctrl_wheel(120); pump()
+z2 = v.zoom
+ctrl_wheel(-120); ctrl_wheel(-120); pump()
+check("Ctrl+wheel zooms by round steps, from an in-between zoom to the next one",
+      (round(z1 * 100), round(z2 * 100), round(v.zoom * 100)) == (90, 100, 80), f"{z1} {z2} {v.zoom}")
+v.set_zoom(1.0)
+for _ in range(3):
+    ctrl_wheel(40)
+pump()
+z1 = v.zoom
+ctrl_wheel(40); pump()
+check("small touchpad movements add up to one step, not one each", (round(z1 * 100), round(v.zoom * 100)) == (110, 110),
+      f"{z1} {v.zoom}")
+w.actions_by_name["zoom_in"].trigger(); w.actions_by_name["zoom_in"].trigger(); pump()
+check("Zoom In uses the same steps", round(v.zoom * 100) == 150, str(v.zoom))
+v.set_zoom(zoom0, fit=fit0); pump()
 w.set_mode("highlight")
 w.open_files([os.path.join(SAMPLES, "scan.png")]); pump()     # an image: opened, but kept out of recent files
 check("opening another file goes back to Move, in every tab", w.mode == "hand"
