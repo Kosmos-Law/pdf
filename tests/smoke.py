@@ -340,7 +340,7 @@ check("redaction tools are off the main toolbar",
       not on_toolbar & {w.actions_by_name[n] for n in ("mode_redact", "apply_redactions", "redact_search")})
 check("redaction bar hidden until redacting", w.redact_bar.isHidden())
 tb_actions = w.toolbar.actions()
-check("OCR sits just right of Save", tb_actions[tb_actions.index(w.actions_by_name["save"]) + 1] is w.actions_by_name["ocr"])
+check("OCR sits just right of Print", tb_actions[tb_actions.index(w.actions_by_name["print"]) + 1] is w.actions_by_name["ocr"])
 v.canvas.setFocus(); pump()
 QTest.keyClick(w, Qt.Key_R)
 pump()
@@ -361,10 +361,33 @@ check("a mark is drawn lightly: a faint mauve outline, no cross", mark.colors["s
       f"{mark.colors} {mark.opacity}")
 from PySide6.QtWidgets import QMenuBar  # noqa: E402
 check("the menus live behind a menu button at the right end of the toolbar, not in a menu bar",
-      not w.findChildren(QMenuBar) and w.toolbar.widgetForAction(w.toolbar.actions()[-1]) is w.menu_button
+      not w.findChildren(QMenuBar) and w.menu_button.parent() is w.toolbar and w.menu_button.isVisible()
+      and w.menu_button.geometry().right() > w.toolbar.width() - 12
+      and w.menu_button.geometry().left() > max(w.toolbar.widgetForAction(x).geometry().right()
+                                                for x in w.toolbar.actions() if x.isVisible())
       and w.menu_button.menu() is w.main_menu
       and [m.text() for m in w.main_menu.actions()] == ["&File", "&Edit", "&View", "&Pages", "&Tools", "&Help"],
       str([m.text() for m in w.main_menu.actions()]))
+check("Print sits on the toolbar, just right of Save, and is the File menu's Print",
+      tb_actions[tb_actions.index(w.actions_by_name["save"]) + 1] is w.actions_by_name["print"]
+      and not w.toolbar.widgetForAction(w.actions_by_name["print"]).icon().isNull())
+_size = w.size()
+w.resize(w.toolbar.sizeHint().width(), _size.height()); pump()
+check("a window as wide as the toolbar shows all of it", not w.toolbar.hidden_actions(),
+      f"{w.width()} wide: {[x.text() for x in w.toolbar.hidden_actions()]}")
+w.resize(700, _size.height()); pump()
+_shown = [x for x in w.toolbar.actions() if x.isVisible()]
+_gone = w.toolbar.hidden_actions()
+check("a narrow window leaves toolbar items out from the right, and never the menu button",
+      _gone and _gone == _shown[-len(_gone):] and w.actions_by_name["mode_label"] in _gone
+      and w.actions_by_name["open"] not in _gone and w.menu_button.isVisible()
+      and w.menu_button.geometry().right() > w.toolbar.width() - 12 and w.toolbar.width() <= 700
+      and all(w.toolbar.widgetForAction(x).geometry().right() < w.menu_button.geometry().left()
+              for x in _shown if x not in _gone),
+      f"{len(_gone)} of {len(_shown)} left out, menu at {w.menu_button.geometry()}")
+w.resize(w.toolbar.sizeHint().width(), _size.height()); pump()
+check("widening the window brings them back", not w.toolbar.hidden_actions())
+w.resize(_size); pump()
 check("every action stays with the window, so its shortcut works without a menu bar",
       all(act in w.actions() for act in w.actions_by_name.values()))
 tools_menu = next(m for m in w.main_menu.findChildren(QMenu) if m.title() == "&Tools")

@@ -5,13 +5,13 @@ import sys
 import tempfile
 
 import pymupdf as fitz
-from PySide6.QtCore import (QByteArray, QEvent, QMimeData, QPoint, QProcess, QProcessEnvironment, QSize, Qt, QTimer,
+from PySide6.QtCore import (QByteArray, QEvent, QMimeData, QPoint, QProcess, QProcessEnvironment, QRect, QSize, Qt, QTimer,
                             QUrl, qVersion)
 from PySide6.QtGui import (QAction, QActionGroup, QCursor, QDesktopServices, QDrag, QGuiApplication, QIcon,
                            QIntValidator, QPalette, QKeySequence, QMouseEvent)
 from PySide6.QtWidgets import (QApplication, QComboBox, QDoubleSpinBox, QFileDialog,
                                QInputDialog, QLabel, QLineEdit, QMainWindow, QMenu, QMessageBox,
-                               QProgressDialog, QSizePolicy, QSplitter, QTabBar, QTabWidget,
+                               QProgressDialog, QSizePolicy, QSplitter, QStyle, QTabBar, QTabWidget,
                                QToolBar, QToolButton, QVBoxLayout, QWidget)
 
 from . import dialogs, labels, printing
@@ -60,6 +60,47 @@ LUCIDE = {
     "mode_select": "text-cursor", "mode_highlight": "highlighter", "mode_typewriter": "type", "mode_redact": "eye-off",
     "mode_label": "stamp", "label_files": "stamp", "mode_hand": "hand",
 }
+
+
+class MainToolBar(QToolBar):
+    """The main toolbar. When the window is too narrow for all of it, Qt leaves out the
+    items that don't fit, starting from the right. The menu button must never go, so it
+    stands at the right edge outside the toolbar's layout, in room kept for it there.
+    The » button Qt would offer for the items left out is not shown."""
+
+    def __init__(self, title, pinned):
+        super().__init__(title)
+        self.pinned = pinned
+        pinned.setParent(self)
+        self.extension = self.findChild(QToolButton, "qt_toolbar_ext_button")
+        if self.extension:
+            self.extension.setFixedSize(0, 0)
+        self.place_pinned()
+
+    def hidden_actions(self):
+        """The actions left out for want of room."""
+        return [a for a in self.actions() if a.isVisible() and (w := self.widgetForAction(a)) and w.isHidden()]
+
+    def place_pinned(self):
+        size = self.pinned.sizeHint()
+        gap = self.layout().spacing()
+        if self.contentsMargins().right() != size.width() + gap:
+            self.setContentsMargins(0, 0, size.width() + gap, 0)
+        inner = self.rect().marginsRemoved(self.layout().contentsMargins())
+        rect = QRect(0, 0, size.width(), min(size.height(), inner.height()))
+        rect.moveCenter(inner.center())
+        rect.moveRight(inner.right())
+        self.pinned.setGeometry(QStyle.visualRect(self.layoutDirection(), self.rect(), rect))
+
+    def resizeEvent(self, e):
+        super().resizeEvent(e)
+        self.place_pinned()
+
+    def event(self, e):
+        done = super().event(e)
+        if e.type() in (QEvent.LayoutRequest, QEvent.StyleChange, QEvent.Polish, QEvent.LayoutDirectionChange):
+            self.place_pinned()
+        return done
 
 
 class FindBar(QToolBar):
@@ -684,13 +725,18 @@ class MainWindow(QMainWindow):
 
     def build_toolbar(self):
         a = self.actions_by_name
-        tb = self.toolbar = QToolBar("Main")
+        button = self.menu_button = QToolButton()
+        button.setObjectName("menuButton")
+        button.setToolTip("Menu (F10)")
+        button.setMenu(self.main_menu)
+        button.setPopupMode(QToolButton.InstantPopup)
+        tb = self.toolbar = MainToolBar("Main", button)
         tb.setMovable(False)
         tb.setIconSize(QSize(theme.TOOLBAR_ICON, theme.TOOLBAR_ICON))
         self.addToolBar(tb)
         tb.addAction(a["thumbs"])
         tb.addSeparator()
-        for n in ("open", "save", "ocr"):
+        for n in ("open", "save", "print", "ocr"):
             tb.addAction(a[n])
         # Open is a split button: the button opens a file, and its arrow lists the recent ones.
         self.open_button = tb.widgetForAction(a["open"])
@@ -731,15 +777,6 @@ class MainWindow(QMainWindow):
         tb.addAction(a["mode_typewriter"])
         tb.addWidget(self.font_size)
         tb.addAction(a["mode_label"])
-        spacer = QWidget()
-        spacer.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
-        tb.addWidget(spacer)
-        button = self.menu_button = QToolButton()
-        button.setObjectName("menuButton")
-        button.setToolTip("Menu (F10)")
-        button.setMenu(self.main_menu)
-        button.setPopupMode(QToolButton.InstantPopup)
-        tb.addWidget(button)
         # Common commands are icons with tooltips; most tools keep a label so they are easy to find (Move, a hand, needs none).
         labelled = {a[n] for n in ("mode_select", "mode_highlight", "mode_typewriter", "mode_label", "ocr")}
         tb.setToolButtonStyle(Qt.ToolButtonIconOnly)
