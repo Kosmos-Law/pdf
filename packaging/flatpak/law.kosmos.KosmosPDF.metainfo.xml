@@ -39,6 +39,16 @@
     <color type="primary" scheme_preference="dark">#2e3440</color>
   </branding>
   <releases>
+    <release version="0.4.1" date="2026-11-12">
+      <description>
+        <ul>
+          <li>A Print button on the toolbar, next to Save.</li>
+          <li>The Open button has an arrow that lists the recent documents.</li>
+          <li>Ctrl+wheel and Zoom In/Out move through round zoom levels (50, 67, 75, 80, 90, 100, 110, 125, 150% and so on) rather than odd percentages.</li>
+          <li>In a window too narrow for the whole toolbar, the menu button always stays in view; the other buttons drop out from the right and come back when the window is widened.</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.4.0" date="2026-11-05">
       <description>
         <p>Kosmic PDF is now Kosmos PDF. There is nothing you need to do: your settings, recent files and label presets come across, and exhibit labels in files saved before the change can still be edited. On Linux, the update offers to switch to the new name; on Windows, the new installer replaces the old one.</p>
