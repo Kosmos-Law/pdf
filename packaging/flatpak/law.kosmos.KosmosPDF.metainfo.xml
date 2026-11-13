@@ -39,6 +39,11 @@
     <color type="primary" scheme_preference="dark">#2e3440</color>
   </branding>
   <releases>
+    <release version="0.4.2" date="2026-11-13">
+      <description>
+        <p>Exhibits can now be labelled from the command line, with no window, so that a script or an AI assistant can do it: "kosmospdf label" lists the saved presets, shows the labels files carry, and labels or renumbers a set of files as Label Exhibit Files does. The README has the details.</p>
+      </description>
+    </release>
     <release version="0.4.1" date="2026-11-12">
       <description>
         <ul>
