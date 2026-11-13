@@ -249,7 +249,22 @@ def add_bundled_tools():
         os.environ["TESSDATA_PREFIX"] = tessdata
 
 
+def use_test_settings():
+    """For test launches: keep settings (recent files, last folder) out of the user's own.
+    Flatpak always sets XDG_CONFIG_HOME itself, so that can't be used to redirect them."""
+    from PySide6.QtCore import QSettings
+    if os.environ.get("KOSMOSPDF_SETTINGS_DIR"):
+        QSettings.setDefaultFormat(QSettings.IniFormat)    # a folder of files, on Windows too (not the registry)
+        for fmt in (QSettings.IniFormat, QSettings.NativeFormat):
+            QSettings.setPath(fmt, QSettings.UserScope, os.environ["KOSMOSPDF_SETTINGS_DIR"])
+
+
 def main():
+    # `kosmospdf label ...` labels exhibits from the command line, with no window (see cli).
+    args = [a for a in sys.argv[1:] if a != "--dev"]
+    if args and args[0] == "label":
+        from .cli import main as label_main
+        return label_main(args[1:])
     files = [os.path.abspath(a) for a in sys.argv[1:] if not a.startswith("-")]
     # --new-instance runs on its own, without taking over the running copy's socket.
     if "--new-instance" not in sys.argv and send_to_running(files, os.environ.get("XDG_ACTIVATION_TOKEN")):
@@ -259,17 +274,11 @@ def main():
     # Qt and the app's modules are loaded only now, so a handoff above is quick.
     add_bundled_tools()
     defer_import("pymupdf")
-    from PySide6.QtCore import QSettings
     from PySide6.QtWidgets import QApplication
     from .theme import LucideStyle, follow_color_scheme
     from .window import MainWindow
 
-    # For test launches: keep settings (recent files, last folder) out of the user's own.
-    # Flatpak always sets XDG_CONFIG_HOME itself, so that can't be used to redirect them.
-    if os.environ.get("KOSMOSPDF_SETTINGS_DIR"):
-        QSettings.setDefaultFormat(QSettings.IniFormat)    # a folder of files, on Windows too (not the registry)
-        for fmt in (QSettings.IniFormat, QSettings.NativeFormat):
-            QSettings.setPath(fmt, QSettings.UserScope, os.environ["KOSMOSPDF_SETTINGS_DIR"])
+    use_test_settings()
     app = QApplication(sys.argv)
     app.setApplicationName("Kosmos PDF (Dev)" if DEV else "Kosmos PDF")   # also ends each window's title
     app.setApplicationVersion(__version__)

@@ -595,6 +595,43 @@ def label_files(files, targets, params, position, margin, in_place=False, progre
     return done
 
 
+def designations(files, start):
+    """[(file, designation)] for files in order, numbered on from start."""
+    out, d = [], start
+    for f in files:
+        out.append((f, d))
+        d = next_designation(d)
+    return out
+
+
+def targets_for(files, start, naming="exhibit", in_place=True, folder=""):
+    """Where each labelled file is written: beside the file itself (in place), or in folder."""
+    return [os.path.join(os.path.dirname(f) if in_place else folder, exhibit_name(f, d, naming))
+            for f, d in designations(files, start)]
+
+
+def files_problem(files, targets, start, in_place, folder=""):
+    """Why the files can't be labelled as set up, or None."""
+    if not files:
+        return "Add the files to label first."
+    if not start:
+        return "Give the first file its number or letter (Start at)."
+    sources = {os.path.realpath(f) for f in files}
+    targets = [os.path.realpath(t) for t in targets]
+    if len(set(targets)) < len(targets):
+        return "Two files would get the same name. Rename one of them first."
+    if in_place:
+        clash = [t for t in targets if os.path.exists(t) and t not in sources]
+        if clash:
+            return ("That would replace a file that isn't in the list:\n" + "\n".join(os.path.basename(t) for t in clash[:8]))
+        return None
+    if not folder.strip():
+        return "Choose a folder for the labelled copies."
+    if sources & set(targets):
+        return "That would save over an original file. Choose another folder, or label the files where they are."
+    return None
+
+
 class LabelFilesDialog(QDialog):
     """Label a set of files, in an order the user sets: the files themselves, labelled and
     renamed "Exhibit 3 - Contract.pdf" where they are (the default), or into copies. Files
@@ -665,16 +702,11 @@ class LabelFilesDialog(QDialog):
 
     def designations(self):
         """[(file, designation)] in the list's order."""
-        out, d = [], self.fields.params()["designation"]
-        for f in self.list.files():
-            out.append((f, d))
-            d = next_designation(d)
-        return out
+        return designations(self.list.files(), self.fields.params()["designation"])
 
     def targets(self):
-        naming, folder = self.naming_key(), self.folder.text()
-        return [os.path.join(os.path.dirname(f) if self.in_place.isChecked() else folder, exhibit_name(f, d, naming))
-                for f, d in self.designations()]
+        return targets_for(self.list.files(), self.fields.params()["designation"], self.naming_key(),
+                           self.in_place.isChecked(), self.folder.text())
 
     def _label(self, f):
         for (path, d), target in zip(self.designations(), self.targets()):
@@ -710,25 +742,8 @@ class LabelFilesDialog(QDialog):
 
     def problem(self):
         """Why the files can't be labelled as set up, or None."""
-        files = self.list.files()
-        if not files:
-            return "Add the files to label first."
-        if not self.fields.params()["designation"]:
-            return "Give the first file its number or letter (Start at)."
-        sources = {os.path.realpath(f) for f in files}
-        targets = [os.path.realpath(t) for t in self.targets()]
-        if len(set(targets)) < len(targets):
-            return "Two files would get the same name. Rename one of them first."
-        if self.in_place.isChecked():
-            clash = [t for t in targets if os.path.exists(t) and t not in sources]
-            if clash:
-                return ("That would replace a file that isn't in the list:\n" + "\n".join(os.path.basename(t) for t in clash[:8]))
-            return None
-        if not self.folder.text().strip():
-            return "Choose a folder for the labelled copies."
-        if sources & set(targets):
-            return "That would save over an original file. Choose another folder, or label the files where they are."
-        return None
+        return files_problem(self.list.files(), self.targets(), self.fields.params()["designation"],
+                             self.in_place.isChecked(), self.folder.text())
 
     def accept(self):
         problem = self.problem()

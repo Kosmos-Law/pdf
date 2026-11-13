@@ -117,6 +117,20 @@ jobs:
           if (-not $ok) { pwsh packaging/windows/annotate.ps1 smoke-built.log "The self-test hung inside the built app; the log ends where it stopped"; exit 1 }
           if ($p.ExitCode -ne 0) { pwsh packaging/windows/annotate.ps1 smoke-built.log "The test suite failed inside the built app (exit $($p.ExitCode))"; exit 1 }
 
+          # `KosmosPDF.exe label ...` (labelling from the command line) must reach a caller that
+          # reads its output through a pipe or a file, though a windowed program has no console.
+          Remove-Item Env:KOSMOSPDF_SELFTEST
+          $env:KOSMOSPDF_SETTINGS_DIR = "$env:RUNNER_TEMP\label-settings"
+          New-Item -ItemType Directory -Force "$env:KOSMOSPDF_SETTINGS_DIR\kosmospdf" | Out-Null
+          $terms = python -c "from kosmospdf.dialogs import TERMS_VERSION; print(TERMS_VERSION)"
+          Set-Content -Path "$env:KOSMOSPDF_SETTINGS_DIR\kosmospdf\kosmospdf.ini" -Value "[terms]", "accepted=$terms" -Encoding ascii
+          $p = Start-Process -PassThru -FilePath "$app\KosmosPDF.exe" -ArgumentList "label", "options" -RedirectStandardOutput label-cli.log -RedirectStandardError label-cli.err.log
+          $ok = Finished $p 120 "KosmosPDF.exe label options"
+          Get-Content label-cli.log, label-cli.err.log -ErrorAction SilentlyContinue | Select-Object -First 12
+          if (-not $ok -or $p.ExitCode -ne 0 -or -not (Select-String -Quiet -SimpleMatch '"presets"' label-cli.log)) {
+            pwsh packaging/windows/annotate.ps1 label-cli.err.log "KosmosPDF.exe label options printed no JSON to a redirected output (exit $($p.ExitCode))"; exit 1
+          }
+
       - name: Installer
         run: |
           & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" /Q /DAppVersion=${{ steps.version.outputs.version }} packaging\windows\kosmospdf.iss *> iscc.log

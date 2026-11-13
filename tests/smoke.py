@@ -1448,6 +1448,97 @@ check("…and renumbers the sticker in each, in its old place, with the new colo
       labels.file_labels(new_contract) == ["1"] and labels.file_labels(new_letter) == ["2"] and len(relabelled) == 1
       and rrect == lrect and rparams.get("color") == labels.COLORS["Green"], f"{rrect} {lrect} {rparams}")
 lf2.deleteLater()
+
+# --- kosmospdf label: the same labelling from the command line, with no window, for scripts and AI assistants ---
+import contextlib  # noqa: E402
+import io  # noqa: E402
+import json  # noqa: E402
+from kosmospdf import cli  # noqa: E402
+
+
+def label_cli(*argv):
+    """Run `kosmospdf label ...`: (exit code, the JSON it printed or None, its error text)."""
+    out, err = io.StringIO(), io.StringIO()
+    with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+        try:
+            code = cli.main(list(argv))
+        except SystemExit as exc:       # argparse's own exit, for a command line it can't read
+            code = exc.code
+    return code, (json.loads(out.getvalue()) if out.getvalue().strip() else None), err.getvalue()
+
+
+_terms = dialogs.settings().value("terms/accepted")
+dialogs.settings().remove("terms/accepted")
+code, got, err = label_cli("options")
+check("the command line does nothing until the terms are accepted in the app", code == 1 and got is None and "terms" in err, err)
+dialogs.accept_terms()
+labels.save_presets(dialogs.settings(), [{"name": "Blue Plaintiff", "caption": "Plaintiff Exhibit", "color": labels.COLORS["Blue"],
+                                          "width": 1.75, "height": 0.75}])
+code, got, err = label_cli("options")
+check("label options lists the saved presets and the colours, sizes and positions on offer", code == 0
+      and got["presets"] == [{"name": "Blue Plaintiff", "caption": "Plaintiff Exhibit", "color": labels.COLORS["Blue"],
+                              "width": 1.75, "height": 0.75}]
+      and got["colors"] == dict(labels.COLORS) and got["sizes"]["Wide"] == {"width": 1.75, "height": 0.75}
+      and got["positions"] == dialogs.POSITIONS, f"{code} {err}")
+cli_dir = os.path.join(work, "cli")
+os.makedirs(cli_dir, exist_ok=True)
+c_contract, c_letter = os.path.join(cli_dir, "Contract.pdf"), os.path.join(cli_dir, "Letter.pdf")
+shutil.copy(os.path.join(SAMPLES, "sample.pdf"), c_contract); shutil.copy(os.path.join(SAMPLES, "second.pdf"), c_letter)
+c_out = os.path.join(cli_dir, "Exhibits")
+code, got, err = label_cli("apply", c_contract, c_letter, "--start", "3", "--preset", "blue plaintiff", "--folder", c_out, "--dry-run")
+check("label apply --dry-run says what it would do and changes nothing", code == 0 and got["dry_run"] is True
+      and [(f["file"], f["designation"], f["relabelled"]) for f in got["files"]]
+      == [(os.path.join(c_out, "Exhibit 3 - Contract.pdf"), "3", False), (os.path.join(c_out, "Exhibit 4 - Letter.pdf"), "4", False)]
+      and got["label"]["caption"] == "Plaintiff Exhibit" and got["next_designation"] == "5" and not os.path.exists(c_out), f"{code} {err}")
+code, got, err = label_cli("apply", c_contract, c_letter, "--start", "3", "--preset", "blue plaintiff", "--folder", c_out,
+                           "--position", "top-right")
+with fitz.open(os.path.join(c_out, "Exhibit 3 - Contract.pdf")) as d:
+    pg = d[0]
+    c_labels = [a for a in pg.annots() if labels.is_label(a)]
+    c_rect = fitz.Rect(c_labels[0].rect) if c_labels else None
+    c_params = labels.label_params(d, c_labels[0].xref) if c_labels else {}
+    c_page_w = pg.rect.width
+check("label apply --folder writes labelled copies with the preset's label, where asked, and leaves the originals alone",
+      code == 0 and sorted(os.listdir(c_out)) == ["Exhibit 3 - Contract.pdf", "Exhibit 4 - Letter.pdf"]
+      and c_params == {"caption": "Plaintiff Exhibit", "designation": "3", "color": labels.COLORS["Blue"], "width": 1.75, "height": 0.75}
+      and c_rect and abs(c_rect.y0 - 18) < 0.5 and abs(c_page_w - c_rect.x1 - 18) < 0.5 and abs(c_rect.width - 126) < 0.5
+      and labels.file_labels(c_contract) == [] and labels.file_labels(c_letter) == [], f"{code} {err} {c_rect} {c_params}")
+code, got, err = label_cli("apply", c_contract, c_letter, "--start", "3", "--folder", c_out)
+check("it won't replace copies already there unless told to", code == 1 and "--overwrite" in err
+      and labels.file_labels(os.path.join(c_out, "Exhibit 3 - Contract.pdf")) == ["3"], err)
+code, got, err = label_cli("apply", os.path.join(c_out, "Exhibit 4 - Letter.pdf"), os.path.join(c_out, "Exhibit 3 - Contract.pdf"),
+                           "--start", "A", "--caption", "Joint Exhibit", "--color", "green", "--size", "2x1", "--in-place")
+with fitz.open(os.path.join(c_out, "Exhibit B - Contract.pdf")) as d:
+    pg = d[0]
+    c_labels2 = [a for a in pg.annots() if labels.is_label(a)]
+    c_params2 = labels.label_params(d, c_labels2[0].xref) if c_labels2 else {}
+check("label apply --in-place renumbers and renames a labelled set, changing each sticker rather than adding one",
+      code == 0 and sorted(os.listdir(c_out)) == ["Exhibit A - Letter.pdf", "Exhibit B - Contract.pdf"]
+      and [(f["designation"], f["relabelled"], f["previous_designations"]) for f in got["files"]] == [("A", True, ["4"]), ("B", True, ["3"])]
+      and len(c_labels2) == 1 and c_params2 == {"caption": "Joint Exhibit", "designation": "B", "color": labels.COLORS["Green"],
+                                                "width": 2.0, "height": 1.0}, f"{code} {err} {c_params2}")
+code, got, err = label_cli("show", os.path.join(c_out, "Exhibit A - Letter.pdf"), c_contract)
+check("label show reports the labels each file carries",
+      code == 0 and [f["labels"] for f in got["files"]] == [[{"page": 1, "designation": "A", "caption": "Joint Exhibit",
+                                                              "color": labels.COLORS["Green"], "width": 2.0, "height": 1.0}], []], f"{code} {err}")
+_bad = [label_cli("apply", c_contract, "--start", "1", "--preset", "Nope", "--in-place"),
+        label_cli("apply", c_contract, "--start", "1", "--color", "puce", "--in-place"),
+        label_cli("apply", c_contract, "--start", "1", "--folder", cli_dir, "--naming", "keep"),
+        label_cli("apply", c_contract, os.path.join(cli_dir, "missing.pdf"), "--start", "1", "--in-place"),
+        label_cli("apply", c_contract, c_contract, "--start", "1", "--in-place")]
+check("a mistake is refused with a plain message and exit code 1, and nothing is changed",
+      [c for c, _, _ in _bad] == [1] * 5 and all(g is None for _, g, _ in _bad)
+      and ['Saved presets: "Blue Plaintiff"' in _bad[0][2], "Yellow" in _bad[1][2], "original" in _bad[2][2],
+           "No such file" in _bad[3][2], "twice" in _bad[4][2]] == [True] * 5
+      and sorted(os.listdir(cli_dir)) == ["Contract.pdf", "Exhibits", "Letter.pdf"] and labels.file_labels(c_contract) == [],
+      str([e for _, _, e in _bad]))
+check("a command line it can't read exits with 2, and neither --in-place nor --folder is assumed",
+      label_cli("apply", c_contract, "--start", "1")[0] == 2 and labels.file_labels(c_contract) == [])
+labels.save_presets(dialogs.settings(), [])
+if _terms is None:
+    dialogs.settings().remove("terms/accepted")
+else:
+    dialogs.settings().setValue("terms/accepted", _terms)
 # the whole command from the menu, on a file open in a tab
 w.open_files([new_letter]); pump()
 open_tab = next(t_ for t_ in w.doc_tabs() if t_.pdoc.path == new_letter)
