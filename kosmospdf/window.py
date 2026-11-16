@@ -549,7 +549,11 @@ class MainWindow(QMainWindow):
         WINDOWS.append(self)
         self.last_used = next(_uses)      # opening a window counts as using it
         self.setAttribute(Qt.WA_DeleteOnClose)
-        self.resize(1200, 860)
+        # A window opens the size the last one closed was, and maximized if that one was.
+        size = dialogs.settings().value("window/size")
+        self.resize(size if isinstance(size, QSize) and size.width() >= 400 and size.height() >= 300 else QSize(1200, 860))
+        if dialogs.settings().value("window/maximized", False, type=bool):
+            self.setWindowState(Qt.WindowMaximized)       # show() then shows it maximized
         self.setAcceptDrops(True)
         self.jobs = set()
         self.mode = dialogs.opening_tool()    # Move, unless Preferences says otherwise: a file opens ready to be looked through
@@ -1249,7 +1253,8 @@ class MainWindow(QMainWindow):
                 self.move(pos)
             return
         win = MainWindow()
-        win.resize(self.size())
+        win.setWindowState(Qt.WindowNoState)      # a tab pulled out makes a window where it is dropped, not a maximized one
+        win.resize(self.normalGeometry().size() if self.isMaximized() else self.size())
         self.move_tab_to(tab, win)
         if pos is not None:
             win.move(pos)
@@ -1515,6 +1520,10 @@ class MainWindow(QMainWindow):
                 return
         if self in WINDOWS:
             WINDOWS.remove(self)
+        s = dialogs.settings()
+        s.setValue("window/maximized", self.isMaximized())
+        if not self.isMaximized() and not self.isFullScreen():
+            s.setValue("window/size", self.size())        # maximized, the size to go back to stays as it was
         e.accept()
 
     # --- edit ---------------------------------------------------------------

@@ -1751,6 +1751,36 @@ w.set_hl_color(HIGHLIGHT_COLORS["Yellow"]); w.font_size.setValue(12); w.set_mode
 for _k in ("tools/typewriter_size", "tools/highlight"):     # again: putting the window back saved them
     dialogs.settings().remove(_k)
 
+# --- a window opens as the last one was left: its size, and maximized or not ---------------------------------------
+for _k in ("window/size", "window/maximized"):       # as on a first run: windows closed earlier in this run left theirs
+    dialogs.settings().remove(_k)
+_w2 = window.MainWindow()
+_first = _w2.size()
+_w2.show(); _w2.resize(1000, 700); pump(); _w2.close(); pump()
+_w3 = window.MainWindow(); _w3.show(); pump()
+check("a window opens at the size the last one was closed at", (_first.width(), _first.height()) == (1200, 860)
+      and (_w3.width(), _w3.height()) == (1000, 700) and not _w3.isMaximized(), f"{_first} {_w3.size()}")
+_w3.showMaximized(); pump(); _w3.close(); pump()
+_w4 = window.MainWindow()
+_state = bool(_w4.windowState() & Qt.WindowMaximized)
+_w4.show(); pump()
+check("closed maximized, the next opens maximized, and remembers the size to go back to",
+      _state and _w4.isMaximized() and dialogs.settings().value("window/size") == QSize(1000, 700),
+      f"{_state} {_w4.isMaximized()} {dialogs.settings().value('window/size')}")
+_t4 = _w4.add_doc(PdfDocument(fitz.open(os.path.join(SAMPLES, "sample.pdf")), title="a.pdf"))
+_t5 = _w4.add_doc(PdfDocument(fitz.open(os.path.join(SAMPLES, "sample.pdf")), title="b.pdf")); pump()
+_n = len(window.WINDOWS)
+_w4.move_tab_to_new_window(_t5); pump()
+_w5 = window.WINDOWS[-1]
+check("a tab pulled out of a maximized window gets an ordinary window", len(window.WINDOWS) == _n + 1
+      and not _w5.isMaximized() and _w5.width() == 1000)
+for _x in (_w5, _w4):
+    for _tab in _x.doc_tabs():
+        _tab.pdoc.modified = False
+    _x.close(); pump()
+for _k in ("window/size", "window/maximized"):
+    dialogs.settings().remove(_k)
+
 # --- Clean View: the document alone, for a shared screen -----------------------------------------------------------
 w.tabs.setCurrentWidget(t); w.set_thumbs(True); w.findbar.open_bar(); pump()
 _view = next(m_.menu() for m_ in w.main_menu.actions() if m_.text() == "&View")
