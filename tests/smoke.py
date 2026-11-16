@@ -1695,6 +1695,81 @@ dialogs.settings().setValue("view/default_zoom", "garbled")
 check("an unreadable setting falls back to Fit width", new_tab_zoom()[0] == "width")
 dialogs.settings().remove("view/default_zoom")
 
+# the tool a file opens with, and the typewriter size and highlight colour as last used
+prefs = dialogs.PreferencesDialog(w)
+check("the tool a file opens with is Move unless chosen", prefs.tool.currentData() == "hand")
+prefs.tool.setCurrentIndex(prefs.tool.findData("select")); prefs.accept()
+w.set_mode("highlight")
+_tool_path = os.path.join(OUT, "tool.pdf"); shutil.copy(os.path.join(SAMPLES, "sample.pdf"), _tool_path)
+w.open_files([_tool_path]); settle(100)
+check("with Select chosen, an opened file puts the window on Select", w.mode == "select" and w.tab.view.mode == "select")
+w.close_tab(w.tab); pump()
+w.set_hl_color(None); w.set_hl_color(HIGHLIGHT_COLORS["Green"]); w.font_size.setValue(14); pump()
+_w2 = window.MainWindow(); _w2.show(); pump()
+check("a new window starts on the chosen tool, with the typewriter size and highlight colour last used",
+      _w2.mode == "select" and _w2.actions_by_name["mode_select"].isChecked() and _w2.font_size.value() == 14
+      and _w2.hl_color == HIGHLIGHT_COLORS["Green"], f"{_w2.mode} {_w2.font_size.value()} {_w2.hl_color}")
+w.set_hl_color(None)
+_w3 = window.MainWindow()
+check("the eraser is not carried over: the colour before it is", _w3.hl_color == HIGHLIGHT_COLORS["Green"])
+_w2.close(); _w3.close(); pump()
+for _k in ("tools/open_with", "tools/typewriter_size", "tools/highlight"):
+    dialogs.settings().remove(_k)
+w.set_hl_color(HIGHLIGHT_COLORS["Yellow"]); w.font_size.setValue(12); w.set_mode("select")
+for _k in ("tools/typewriter_size", "tools/highlight"):     # again: putting the window back saved them
+    dialogs.settings().remove(_k)
+
+# the toolbar checklist: buttons left off, and put back where they were
+def toolbar_now(win):
+    """What shows on the toolbar, in order: action names, "|" for a divider, "?" for a widget."""
+    names = {a_: n for n, a_ in win.actions_by_name.items()}
+    return [("|" if x.isSeparator() else names.get(x, "?")) for x in win.toolbar.actions() if x.isVisible()]
+
+
+_tb_before = toolbar_now(w)
+_w2 = window.MainWindow(); _w2.show(); pump()
+prefs = dialogs.PreferencesDialog(w)
+check("every optional button starts ticked", all(b.isChecked() for b in prefs.toolbar_boxes.values())
+      and list(prefs.toolbar_boxes) == list(dialogs.TOOLBAR_PARTS) == list(window.TOOLBAR_MEMBERS))
+for part in ("print", "ocr", "undo", "rotate", "typewriter"):
+    prefs.toolbar_boxes[part].setChecked(False)
+_exec = dialogs.PreferencesDialog.exec
+dialogs.PreferencesDialog.exec = lambda self: (prefs.accept(), True)[1]
+w.actions_by_name["preferences"].trigger(); pump()
+dialogs.PreferencesDialog.exec = _exec
+_now = toolbar_now(w)
+check("unticked buttons leave the toolbar, in every window, and no divider is left doubled or dangling",
+      _now == ["thumbs", "|", "open", "save", "|", "?", "?", "zoom_out", "?", "zoom_in", "find_bar", "|",
+               "mode_hand", "mode_select", "?", "mode_label"] and toolbar_now(_w2) == _now and not w.font_size.isVisible(),
+      str(_now))
+_file = next(m_.menu() for m_ in w.main_menu.actions() if m_.text() == "&File")
+check("they stay in the menus, with their shortcuts", w.actions_by_name["print"] in _file.actions()
+      and all(w.actions_by_name[n].isVisible() and w.actions_by_name[n] in w.actions()
+              for n in ("print", "ocr", "undo", "redo", "rotate_left", "mode_typewriter")))
+_w3 = window.MainWindow(); _w3.show(); pump()
+check("a window opened afterwards has the same toolbar", toolbar_now(_w3) == _now)
+_w2.close(); _w3.close(); pump()
+prefs = dialogs.PreferencesDialog(w)
+check("the dialog shows what is left off", [p_ for p_, b in prefs.toolbar_boxes.items() if not b.isChecked()]
+      == ["print", "ocr", "undo", "rotate", "typewriter"])
+for b in prefs.toolbar_boxes.values():
+    b.setChecked(True)
+prefs.accept(); w.apply_toolbar(); pump()
+check("ticked again, they come back where they were, OCR and Typewriter with their labels",
+      toolbar_now(w) == _tb_before and w.font_size.isVisible()
+      and w.ocr_button.toolButtonStyle() == Qt.ToolButtonTextBesideIcon
+      and w.toolbar.widgetForAction(w.actions_by_name["mode_typewriter"]).toolButtonStyle() == Qt.ToolButtonTextBesideIcon
+      and w.toolbar.widgetForAction(w.actions_by_name["print"]).toolButtonStyle() == Qt.ToolButtonIconOnly,
+      str(toolbar_now(w)))
+prefs = dialogs.PreferencesDialog(w)
+for b in prefs.toolbar_boxes.values():
+    b.setChecked(False)
+prefs.accept(); w.apply_toolbar(); pump()
+check("with everything unticked, Open, the page and zoom boxes and the menu button remain",
+      toolbar_now(w) == ["open", "|", "?", "?", "zoom_out", "?", "zoom_in"] and w.menu_button.isVisible(), str(toolbar_now(w)))
+dialogs.settings().remove("toolbar/hidden"); w.apply_toolbar(); pump()
+check("and all of it comes back", toolbar_now(w) == _tb_before)
+
 # a file reopens at the page and zoom it was left at
 _left = os.path.join(OUT, "left.pdf")
 shutil.copy(os.path.join(SAMPLES, "sample.pdf"), _left)

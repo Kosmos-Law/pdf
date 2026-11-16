@@ -9,7 +9,7 @@ import pymupdf as fitz
 from PySide6.QtCore import QEvent, QSettings, Qt, Signal
 from PySide6.QtGui import QPalette
 from PySide6.QtWidgets import (QAbstractItemView, QCheckBox, QComboBox, QDialog, QDialogButtonBox,
-                               QDoubleSpinBox, QFileDialog, QFormLayout, QGroupBox, QHBoxLayout,
+                               QDoubleSpinBox, QFileDialog, QFormLayout, QGridLayout, QGroupBox, QHBoxLayout,
                                QLabel, QLineEdit, QListWidget, QListWidgetItem, QMessageBox, QPlainTextEdit,
                                QPushButton, QRadioButton, QSpinBox, QVBoxLayout, QWidget)
 
@@ -558,6 +558,29 @@ def default_zoom(s=None):
     return parse_zoom(str((s or settings()).value("view/default_zoom", "Fit width"))) or (None, "width")
 
 
+# The tool the window is on when a file opens: Move, to look through it, unless the user
+# would rather start by selecting text.
+OPENING_TOOLS = {"hand": "Move (drag the page around)", "select": "Select (text and annotations)"}
+
+
+def opening_tool(s=None):
+    tool = (s or settings()).value("tools/open_with", "hand")
+    return tool if tool in OPENING_TOOLS else "hand"
+
+
+# The toolbar buttons that can be left off, as Preferences lists them. Open, the page and
+# zoom boxes and the menu button always stay; a button left off is still in the menus,
+# with its shortcut.
+TOOLBAR_PARTS = {"thumbs": "Page panel", "save": "Save", "print": "Print", "ocr": "OCR", "undo": "Undo and Redo",
+                 "find": "Find", "rotate": "Rotate", "hand": "Move", "select": "Select", "highlight": "Highlight",
+                 "typewriter": "Typewriter", "label": "Exhibit Label"}
+
+
+def hidden_toolbar_parts(s=None):
+    hidden = str((s or settings()).value("toolbar/hidden", "") or "")
+    return {part for part in hidden.split(",") if part in TOOLBAR_PARTS}
+
+
 # Where each file was left (its zoom and page), so that it reopens there: a list of
 # [path, zoom as the zoom list writes it, page], the latest first, and no longer than VIEWS_MAX.
 VIEWS_MAX = 200
@@ -610,20 +633,39 @@ class PreferencesDialog(QDialog):
         self.zoom.setInsertPolicy(QComboBox.NoInsert)
         self.zoom.setEditText(zoom_text(*default_zoom()))
         self.zoom.setToolTip("The zoom a file opens at. Choose from the list, or type a percentage.")
+        self.tool = QComboBox()
+        for key, text in OPENING_TOOLS.items():
+            self.tool.addItem(text, key)
+        self.tool.setCurrentIndex(self.tool.findData(opening_tool()))
+        self.tool.setToolTip("The tool that is ready when a file opens.")
         self.remember = QCheckBox("&Reopen files at the page and zoom they were left at")
         self.remember.setChecked(remembers_views())
         self.remember.setToolTip("A file you have had open before comes back as you left it;\n"
                                  "the zoom above is for files opened for the first time.")
         self.zoom.editTextChanged.connect(self._update)
+        hidden = hidden_toolbar_parts()
+        self.toolbar_group = QGroupBox("Toolbar buttons")
+        grid = QGridLayout(self.toolbar_group)
+        self.toolbar_boxes = {}
+        rows = (len(TOOLBAR_PARTS) + 2) // 3
+        for n, (part, text) in enumerate(TOOLBAR_PARTS.items()):
+            box = self.toolbar_boxes[part] = QCheckBox(text)
+            box.setChecked(part not in hidden)
+            grid.addWidget(box, n % rows, n // rows)
+        note = QLabel("A button left off is still in the menus, and its shortcut still works.")
+        note.setForegroundRole(QPalette.PlaceholderText)
+        grid.addWidget(note, rows, 0, 1, 3)
         self.buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
         self.buttons.accepted.connect(self.accept)
         self.buttons.rejected.connect(self.reject)
         form = QFormLayout()
         form.addRow("&Zoom when a file opens:", self.zoom)
+        form.addRow("&Tool when a file opens:", self.tool)
         lay = QVBoxLayout(self)
         lay.addLayout(form)
         lay.addWidget(self.remember)
         lay.addWidget(QLabel("Files that are already open keep the zoom they have."))
+        lay.addWidget(self.toolbar_group)
         lay.addWidget(self.buttons)
 
     def _update(self):
@@ -634,6 +676,8 @@ class PreferencesDialog(QDialog):
         if choice is None:
             return
         settings().setValue("view/default_zoom", zoom_text(*choice))
+        settings().setValue("tools/open_with", self.tool.currentData())
+        settings().setValue("toolbar/hidden", ",".join(p for p, box in self.toolbar_boxes.items() if not box.isChecked()))
         settings().setValue("view/remember", self.remember.isChecked())
         if not self.remember.isChecked():
             forget_views()      # nothing kept that the user has said not to keep
