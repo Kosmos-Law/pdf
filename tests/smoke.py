@@ -1751,6 +1751,60 @@ w.set_hl_color(HIGHLIGHT_COLORS["Yellow"]); w.font_size.setValue(12); w.set_mode
 for _k in ("tools/typewriter_size", "tools/highlight"):     # again: putting the window back saved them
     dialogs.settings().remove(_k)
 
+# --- Clean View: the document alone, for a shared screen -----------------------------------------------------------
+w.tabs.setCurrentWidget(t); w.set_thumbs(True); w.findbar.open_bar(); pump()
+_view = next(m_.menu() for m_ in w.main_menu.actions() if m_.text() == "&View")
+check("Clean View is in the View menu, and the way back is not shown until it is on",
+      w.actions_by_name["clean"] in _view.actions() and not w.clean_button.isVisible())
+w.activateWindow(); settle(100)
+QTest.keyClick(w, Qt.Key_F8); pump()
+check("F8 hides the toolbar, find bar, page panel and status bar, and leaves the tabs and the page",
+      not w.toolbar.isVisible() and not w.findbar.isVisible() and not w.statusBar().isVisible()
+      and not t.thumbs.isVisible() and w.tabs.tabBar().isVisible() and t.view.isVisible()
+      and w.actions_by_name["clean"].isChecked())
+check("a button at the right end of the tabs is the way back", w.clean_button.isVisible()
+      and w.clean_button.mapTo(w, QPoint(0, 0)).x() > w.width() - 60 and not w.clean_button.icon().isNull(),
+      str(w.clean_button.geometry()))
+_lb = {b.defaultAction(): b for b in w.clean_left.findChildren(QToolButton)}
+_pb, _ob = _lb[w.actions_by_name["thumbs"]], _lb[w.actions_by_name["open"]]
+check("at the left end of the tabs are the page panel's button and Open, with its list of recent files",
+      w.clean_left.isVisible() and _pb.isVisible() and _ob.isVisible() and _pb.x() < _ob.x()
+      and w.clean_left.mapTo(w, QPoint(0, 0)).x() < 10 and w.tabs.tabBar().mapTo(w, QPoint(0, 0)).x() >= w.clean_left.width()
+      and _ob.menu() is w.open_recent_menu and not _pb.icon().isNull() and not _pb.isChecked())
+w.grab().save(os.path.join(OUT, "06-clean-view.png"))
+_pb.click(); pump()
+_shown = t.thumbs.isVisible() and _pb.isChecked()
+_pr = t.view.page_rects[t.view.current_page]
+check("with the panel opened beside a page at a set zoom, the page is centred in the room left, with no sideways scroll bar",
+      t.view.fit is None and t.view.horizontalScrollBar().maximum() == 0
+      and abs(_pr.left() + _pr.width() / 2 - t.view.viewport().width() / 2) <= 1, f"{_pr} {t.view.viewport().width()}")
+w.grab().save(os.path.join(OUT, "06b-clean-view-panel.png"))
+QTest.keyClick(w, Qt.Key_F4); pump()
+check("the panel's button (or F4) shows and hides the panel there, for the moment only: the setting is left alone",
+      _shown and not t.thumbs.isVisible() and dialogs.settings().value("view/thumbs", type=bool) is True)
+_pb.click(); pump()                # left showing: leaving Clean View goes by how it was before, all the same
+QTest.keyClick(w, Qt.Key_F, Qt.ControlModifier); pump()
+_found = w.findbar.isVisible()
+w.findbar.close_bar()
+w.tabs.setCurrentIndex(1); pump()
+check("shortcuts still work (Ctrl+F opens the find bar), and other tabs follow the panel's button too",
+      _found and w.tab.thumbs.isVisible())
+w.tabs.setCurrentWidget(t); pump()
+w.clean_button.click(); pump()
+check("the button brings everything back, the page panel as it was set",
+      w.toolbar.isVisible() and w.statusBar().isVisible() and t.thumbs.isVisible() and not w.clean_button.isVisible()
+      and not w.clean_left.isVisible() and w.tabs.tabBar().mapTo(w, QPoint(0, 0)).x() < 10
+      and not w.actions_by_name["clean"].isChecked() and dialogs.settings().value("view/thumbs", type=bool) is True)
+_w2 = window.MainWindow(); _w2.show(); pump()
+_t2 = _w2.add_doc(PdfDocument(fitz.open(os.path.join(SAMPLES, "sample.pdf")), title="clean.pdf")); pump()
+_w2.actions_by_name["clean"].trigger(); pump()
+_was_clean = not _w2.toolbar.isVisible() and w.toolbar.isVisible()
+_t2.pdoc.modified = False
+_w2.close_tab(_t2)            # (a second window then closes itself: look before it does)
+check("it is one window's view, and closing the last tab ends it, so the toolbar is never lost",
+      _was_clean and not _w2.toolbar.isHidden() and not _w2.clean_view and not _w2.actions_by_name["clean"].isChecked())
+pump()
+
 # --- Ctrl- and Shift-click in the page panel ----------------------------------------------------------------------
 def panel_click(row, mod=Qt.NoModifier):
     th = t.thumbs

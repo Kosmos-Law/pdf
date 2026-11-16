@@ -9,7 +9,7 @@ from PySide6.QtCore import (QByteArray, QEvent, QMimeData, QPoint, QProcess, QPr
                             QUrl, qVersion)
 from PySide6.QtGui import (QAction, QActionGroup, QCursor, QDesktopServices, QDrag, QGuiApplication, QIcon,
                            QIntValidator, QPalette, QKeySequence, QMouseEvent)
-from PySide6.QtWidgets import (QApplication, QComboBox, QDoubleSpinBox, QFileDialog,
+from PySide6.QtWidgets import (QHBoxLayout, QApplication, QComboBox, QDoubleSpinBox, QFileDialog,
                                QInputDialog, QLabel, QLineEdit, QMainWindow, QMenu, QMessageBox,
                                QProgressDialog, QSizePolicy, QSplitter, QStyle, QTabBar, QTabWidget,
                                QToolBar, QToolButton, QVBoxLayout, QWidget)
@@ -670,6 +670,8 @@ class MainWindow(QMainWindow):
         A("actual", "&Actual Size", lambda: self.tab and self.tab.view.set_zoom(1.0), "Ctrl+0")
         A("thumbs", "&Page Panel", lambda on: self.set_thumbs(on), "F4", tip="Show or hide the page panel (F4)",
           checkable=True).setChecked(dialogs.settings().value("view/thumbs", True, type=bool))
+        A("clean", "&Clean View", lambda on: self.set_clean_view(on), "F8", checkable=True,
+          tip="Hide the toolbar, page panel and status bar, leaving the document: for sharing your screen (F8)")
         A("bates", "&Bates Numbering…", self.bates)
         A("bates_files", "Bates Number &Files…", self.bates_files,
           tip="Bates number several files in an order you set, into numbered copies")
@@ -731,7 +733,7 @@ class MainWindow(QMainWindow):
             file_menu.addSeparator() if n is None else file_menu.addAction(a[n])
         menu("&Edit", ["undo", "redo", None, "cut", "copy", "paste", "select_all", None, "find", "find_next", "find_prev",
                         None, "preferences"])
-        menu("&View", ["zoom_in", "zoom_out", "fit_width", "fit_page", "actual", None, "thumbs"])
+        menu("&View", ["zoom_in", "zoom_out", "fit_width", "fit_page", "actual", None, "thumbs", "clean"])
         menu("&Pages", ["rotate_left", "rotate_right", "rotate_180", None, "cut_pages", "copy_pages", "paste_pages",
                         "delete_pages", None, "extract", "insert_blank", "insert_file", "select_all_pages"])
         menu("&Tools", ["mode_hand", "mode_select", "mode_highlight", "mode_typewriter", "mode_label", "mode_redact", None,
@@ -811,6 +813,34 @@ class MainWindow(QMainWindow):
         self.set_redact_style(style if style in REDACT_STYLES else "black")
         self.findbar = FindBar(self)
         self.findbar.visibilityChanged.connect(a["find_bar"].setChecked)
+        # In Clean View the toolbar and its menu button are gone; this small button at the
+        # right end of the tabs is the way back that can be seen (F8 is the other).
+        self.clean_view = False
+        back = self.clean_button = QToolButton()
+        back.setObjectName("cleanViewButton")
+        back.setAutoRaise(True)
+        back.setFocusPolicy(Qt.NoFocus)
+        back.setToolTip("Show the toolbar again (F8)")
+        back.clicked.connect(lambda: self.set_clean_view(False))
+        self.tabs.setCornerWidget(back, Qt.TopRightCorner)
+        back.hide()
+        # And at the left end, where the toolbar has them, the two things wanted while
+        # showing documents: the page panel, to move about in one, and Open, for the next.
+        left = self.clean_left = QWidget()
+        row = QHBoxLayout(left)
+        row.setContentsMargins(4, 0, 4, 0)
+        row.setSpacing(2)
+        for name in ("thumbs", "open"):
+            b = QToolButton()
+            b.setDefaultAction(a[name])
+            b.setAutoRaise(True)
+            b.setFocusPolicy(Qt.NoFocus)
+            b.setIconSize(QSize(theme.TOOLBAR_ICON, theme.TOOLBAR_ICON))
+            row.addWidget(b)
+        b.setMenu(self.open_recent_menu)                      # Open, with its arrow for the recent files
+        b.setPopupMode(QToolButton.MenuButtonPopup)
+        self.tabs.setCornerWidget(left, Qt.TopLeftCorner)
+        left.hide()
         self.addToolBarBreak()
         self.addToolBar(self.findbar)
 
@@ -849,6 +879,26 @@ class MainWindow(QMainWindow):
             if b.defaultAction() in labelled:
                 b.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
         self.ocr_button = tb.widgetForAction(a["ocr"])       # None while OCR is left off
+
+    def set_clean_view(self, on):
+        """Clean View: nothing but the tabs and the document, for showing an exhibit on a
+        shared screen. The toolbar, page panel and status bar go, and come back as they
+        were. Shortcuts go on working, and Ctrl+F still opens the find bar. The tab bar
+        gains the page panel's button and Open at its left end, and the way back at its right."""
+        if on == self.clean_view:
+            return
+        if on:
+            self._thumbs_before = self.actions_by_name["thumbs"].isChecked()
+            self.findbar.close_bar()
+        self.clean_view = on
+        self.actions_by_name["clean"].setChecked(on)
+        self.toolbar.setVisible(not on)
+        self.statusBar().setVisible(not on)
+        self.clean_button.setVisible(on)
+        self.clean_left.setVisible(on)
+        # The panel starts hidden in Clean View, and can be shown there for the moment (see
+        # set_thumbs); leaving puts it back as it was before.
+        self.set_thumbs(self._thumbs_before and not on)
 
     def build_redact_bar(self):
         """A second row that appears only while redacting (Tools › Redact, or R), with the
@@ -964,6 +1014,8 @@ class MainWindow(QMainWindow):
 
     def update_state(self):
         has = self.tab is not None
+        if not has and getattr(self, "clean_view", False):
+            self.set_clean_view(False)        # the way back is on the tab bar, which goes with the last tab
         self.tabs.setVisible(has)
         self.empty.setVisible(not has)
         for n, a in self.actions_by_name.items():
@@ -1012,6 +1064,7 @@ class MainWindow(QMainWindow):
             t.thumbs.apply_colors(colors)
         if hasattr(self, "color_button"):
             self.menu_button.setIcon(lucide("menu", colors.text))
+            self.clean_button.setIcon(lucide("chevron-down", colors.text))
             self.actions_by_name["mode_highlight"].setIcon(self.hl_icon())
             self.redact_icon.setPixmap(lucide(LUCIDE["mode_redact"], colors.text).pixmap(theme.TOOLBAR_ICON))
             self.findbar.apply_colors(colors)
@@ -1119,7 +1172,8 @@ class MainWindow(QMainWindow):
         self.actions_by_name["thumbs"].setChecked(on)
         for t in self.doc_tabs():
             self.show_thumbs(t, on)
-        dialogs.settings().setValue("view/thumbs", on)
+        if not self.clean_view:           # in Clean View it is shown or hidden for now, not for good
+            dialogs.settings().setValue("view/thumbs", on)
 
     def show_thumbs(self, t, on):
         t.thumbs.setVisible(on)
