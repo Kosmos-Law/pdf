@@ -494,6 +494,7 @@ class PageView(QScrollArea):
         self.redact_by = "text"       # redact mode: "text" (select it) or "area" (draw a box)
         self.page_rects = []          # QRect per page in canvas coords
         self._sizes = []              # (w, h) per page in points, as last laid out
+        self._pages_width = 0         # the width the pages need at this zoom, margins included
         self._cache = OrderedDict()   # (key, zoom, dpr) -> QPixmap
         self._chars = {}              # pdoc.key(i) -> chars
         self._current = 0
@@ -569,7 +570,8 @@ class PageView(QScrollArea):
             self.zoom = self.compute_fit_zoom()
         sizes = self._sizes = [self.page_size(i) for i in range(self.pdoc.page_count)]
         maxw = max((w for w, _ in sizes), default=0) * self.zoom
-        width = max(self.viewport().width(), int(maxw) + 2 * MARGIN)
+        self._pages_width = int(maxw) + 2 * MARGIN
+        width = max(self.viewport().width(), self._pages_width)
         y, rects = MARGIN, []
         for w, h in sizes:
             pw, ph = round(w * self.zoom), round(h * self.zoom)
@@ -590,7 +592,9 @@ class PageView(QScrollArea):
 
     def resizeEvent(self, e):
         super().resizeEvent(e)
-        if self.fit or self.canvas.width() < self.viewport().width():
+        # Also when the window has narrowed (the page panel opening, say) and the canvas is
+        # left wider than it need be: the pages would sit off-centre above a needless scroll bar.
+        if self.fit or self.canvas.width() != max(self.viewport().width(), self._pages_width):
             self.relayout()
 
     def set_zoom(self, zoom=None, fit=None, anchor=None):
