@@ -567,7 +567,7 @@ class MainWindow(QMainWindow):
         self.page_box.returnPressed.connect(lambda: self.tab and self.tab.view.go_to_page(int(self.page_box.text()) - 1))
         self.page_total = QLabel(" / 0 ")
         self.zoom_box = QComboBox(editable=True)
-        self.zoom_box.addItems(["Fit width", "Fit page", "50%", "75%", "100%", "125%", "150%", "200%", "300%", "400%"])
+        self.zoom_box.addItems(dialogs.ZOOM_CHOICES)
         self.zoom_box.setMinimumContentsLength(8)
         self.zoom_box.textActivated.connect(self._zoom_chosen)
         self.font_size = QDoubleSpinBox(minimum=4, maximum=72, value=12, suffix=" pt", decimals=1)
@@ -675,6 +675,7 @@ class MainWindow(QMainWindow):
             self.redact_by_group.addAction(a)
         self.redact_by = "text"
         self.actions_by_name["redact_text"].setChecked(True)
+        A("preferences", "Pre&ferences…", self.preferences, QKeySequence.Preferences)
         A("about", "&About Kosmos PDF", self.about)
         A("menu", "Menu", lambda: self.menu_button.showMenu(), "F10")
 
@@ -712,7 +713,8 @@ class MainWindow(QMainWindow):
         self.recent_menu.aboutToShow.connect(lambda: self.fill_recent_menu())
         for n in ("save", "save_as", None, "print", None, "combine", "images", None, "new_window", "close_tab", "quit"):
             file_menu.addSeparator() if n is None else file_menu.addAction(a[n])
-        menu("&Edit", ["undo", "redo", None, "cut", "copy", "paste", "select_all", None, "find", "find_next", "find_prev"])
+        menu("&Edit", ["undo", "redo", None, "cut", "copy", "paste", "select_all", None, "find", "find_next", "find_prev",
+                        None, "preferences"])
         menu("&View", ["zoom_in", "zoom_out", "fit_width", "fit_page", "actual", None, "thumbs"])
         menu("&Pages", ["rotate_left", "rotate_right", "rotate_180", None, "cut_pages", "copy_pages", "paste_pages",
                         "delete_pages", None, "extract", "insert_blank", "insert_file", "select_all_pages"])
@@ -909,7 +911,7 @@ class MainWindow(QMainWindow):
         self.tabs.setVisible(has)
         self.empty.setVisible(not has)
         for n, a in self.actions_by_name.items():
-            if n not in ("open", "new_window", "combine", "images", "bates_files", "label_files", "quit", "about",
+            if n not in ("open", "new_window", "combine", "images", "bates_files", "label_files", "quit", "about", "preferences",
                          "thumbs", "redact_done", "menu"):
                 a.setEnabled(has)
         if has:
@@ -921,7 +923,7 @@ class MainWindow(QMainWindow):
                 self.page_box.setText(str(self.tab.view.current_page + 1))
             self.page_total.setText(f" / {pdoc.page_count} ")
             z = self.tab.view
-            self.zoom_box.setEditText({"width": "Fit width", "page": "Fit page"}.get(z.fit, f"{round(z.zoom * 100)}%"))
+            self.zoom_box.setEditText(dialogs.zoom_text(z.zoom, z.fit))
         self.update_window_title()
         self.update_badges()
 
@@ -1077,20 +1079,15 @@ class MainWindow(QMainWindow):
     def _zoom_chosen(self, text):
         if not self.tab:
             return
-        if text.startswith("Fit w"):
-            self.tab.view.set_zoom(fit="width")
-        elif text.startswith("Fit p"):
-            self.tab.view.set_zoom(fit="page")
-        else:
-            try:
-                self.tab.view.set_zoom(float(text.strip().rstrip("%")) / 100)
-            except ValueError:
-                pass
+        choice = dialogs.parse_zoom(text)
+        if choice:
+            self.tab.view.set_zoom(*choice)
         self.tab.view.canvas.setFocus()
 
     # --- tabs ---------------------------------------------------------------
     def add_doc(self, pdoc, index=-1):
         tab = DocTab(pdoc)
+        tab.view.set_zoom(*dialogs.default_zoom())    # as chosen in Preferences; Fit width otherwise
         width = dialogs.settings().value("view/thumbs_width", THUMBS_WIDTH, type=int)
         tab.splitter.setSizes([width, 900])
         return self.add_tab(tab, index)
@@ -1271,12 +1268,29 @@ class MainWindow(QMainWindow):
             except Exception as exc:
                 QMessageBox.warning(self, "Open", f"Could not open {os.path.basename(path)}:\n{exc}")
                 continue
-            self.add_doc(pdoc)
+            tab = self.add_doc(pdoc)
             opened = True
             if pdoc.path:
                 remember_recent(pdoc.path)
+                self.restore_view(tab)
         if opened:
             self.set_mode("hand")
+
+    def restore_view(self, tab):
+        """Put a file just opened back at the zoom and page it was left at, if it has been open before."""
+        view = dialogs.remembered_view(tab.pdoc.path)
+        if not view:
+            return
+        zoom, fit, page = view
+        tab.view.set_zoom(zoom, fit)
+        tab.view.go_to_page(page)
+        # Again once the tab has its size: until then the pages may not have been laid out
+        # at their final zoom (Fit width), and the scroll bar can't reach the page.
+        QTimer.singleShot(0, lambda: tab.view.pdoc is tab.pdoc and tab.view.go_to_page(page))
+
+    def clear_recent(self):
+        dialogs.settings().remove("recent_files")
+        dialogs.forget_views()        # where each was left, too: that is a list of the same files
 
     def fill_recent_menu(self, m=None):
         """Rebuilt each time it opens, so every window shows the same, current list. It fills
@@ -1299,7 +1313,7 @@ class MainWindow(QMainWindow):
                 act.setText(f"{label}\tnot found")
         m.setToolTipsVisible(True)
         m.addSeparator()
-        m.addAction("Clear Recent Documents", lambda: dialogs.settings().remove("recent_files"))
+        m.addAction("Clear Recent Documents", self.clear_recent)
 
     def unlock(self, doc, path):
         while True:
@@ -1400,6 +1414,8 @@ class MainWindow(QMainWindow):
         self.tabs.setCurrentWidget(tab)
         if not self.maybe_save(tab):
             return False
+        if tab.pdoc.path:
+            dialogs.remember_view(tab.pdoc.path, tab.view.zoom, tab.view.fit, tab.view.current_page)
         self.detach_tab(tab)
         tab.pdoc.doc.close()
         tab.deleteLater()
@@ -1658,6 +1674,9 @@ class MainWindow(QMainWindow):
                                          f"{t.pdoc.title} is unchanged.", 10000)
         else:
             self.statusBar().showMessage("The redacted copy is open in its own tab, not yet saved.", 10000)
+
+    def preferences(self):
+        dialogs.PreferencesDialog(self).exec()
 
     def about(self):
         QMessageBox.about(self, "Kosmos PDF", f"Kosmos PDF {QApplication.instance().applicationVersion()}\n"

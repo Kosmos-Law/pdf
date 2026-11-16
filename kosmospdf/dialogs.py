@@ -1,4 +1,5 @@
-"""Dialogs: Bates numbering (one document, or several files), combine files, OCR, PDF/A."""
+"""Dialogs: Bates numbering (one document, or several files), combine files, OCR, PDF/A, preferences."""
+import json
 import os
 import shutil
 import subprocess
@@ -522,6 +523,121 @@ class PdfaDialog(QDialog):
 
     def args(self):
         return ["--skip-text", "--tesseract-timeout", "0", "--output-type", self.level.currentData()]
+
+
+# --- preferences --------------------------------------------------------------------------------------------------
+# The zoom list, as the toolbar's box and the Preferences dialog show it.
+ZOOM_CHOICES = ["Fit width", "Fit page", "50%", "75%", "100%", "125%", "150%", "200%", "300%", "400%"]
+ZOOM_MIN, ZOOM_MAX = 0.1, 8.0
+
+
+def parse_zoom(text):
+    """What a line of the zoom list, or a typed percentage, asks for: (zoom, fit), where fit
+    is "width", "page" or None and zoom is None with a fit. None if it can't be read."""
+    text = text.strip().lower()
+    if text.startswith("fit w"):
+        return None, "width"
+    if text.startswith("fit p"):
+        return None, "page"
+    try:
+        zoom = float(text.rstrip("%").strip()) / 100
+    except ValueError:
+        return None
+    if zoom != zoom or zoom <= 0:       # nan, or nothing to show
+        return None
+    return max(ZOOM_MIN, min(zoom, ZOOM_MAX)), None
+
+
+def zoom_text(zoom, fit):
+    return {"width": "Fit width", "page": "Fit page"}.get(fit) or f"{round(zoom * 100)}%"
+
+
+def default_zoom(s=None):
+    """The zoom a newly opened file starts at, as (zoom, fit): Fit width unless the user
+    has chosen otherwise in Preferences."""
+    return parse_zoom(str((s or settings()).value("view/default_zoom", "Fit width"))) or (None, "width")
+
+
+# Where each file was left (its zoom and page), so that it reopens there: a list of
+# [path, zoom as the zoom list writes it, page], the latest first, and no longer than VIEWS_MAX.
+VIEWS_MAX = 200
+
+
+def remembers_views(s=None):
+    return (s or settings()).value("view/remember", True, type=bool)
+
+
+def _views(s):
+    try:
+        views = json.loads(s.value("view/files", "[]"))
+        return [v for v in views if isinstance(v, list) and len(v) == 3]
+    except (TypeError, ValueError):
+        return []
+
+
+def remember_view(path, zoom, fit, page):
+    """Note where this file was left, when it is closed."""
+    s = settings()
+    if not remembers_views(s):
+        return
+    views = [[path, zoom_text(zoom, fit), int(page)]] + [v for v in _views(s) if v[0] != path]
+    s.setValue("view/files", json.dumps(views[:VIEWS_MAX]))
+
+
+def remembered_view(path):
+    """Where this file was left, as (zoom, fit, page), or None: it hasn't been open before
+    (or not lately), or the user would rather files always open the same way."""
+    s = settings()
+    if not remembers_views(s):
+        return None
+    for p, text, page in _views(s):
+        if p == path:
+            choice = parse_zoom(str(text))
+            return choice + (page,) if choice and isinstance(page, int) else None
+    return None
+
+
+def forget_views():
+    settings().remove("view/files")
+
+
+class PreferencesDialog(QDialog):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Preferences")
+        self.zoom = QComboBox(editable=True)
+        self.zoom.addItems(ZOOM_CHOICES)
+        self.zoom.setInsertPolicy(QComboBox.NoInsert)
+        self.zoom.setEditText(zoom_text(*default_zoom()))
+        self.zoom.setToolTip("The zoom a file opens at. Choose from the list, or type a percentage.")
+        self.remember = QCheckBox("&Reopen files at the page and zoom they were left at")
+        self.remember.setChecked(remembers_views())
+        self.remember.setToolTip("A file you have had open before comes back as you left it;\n"
+                                 "the zoom above is for files opened for the first time.")
+        self.zoom.editTextChanged.connect(self._update)
+        self.buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        self.buttons.accepted.connect(self.accept)
+        self.buttons.rejected.connect(self.reject)
+        form = QFormLayout()
+        form.addRow("&Zoom when a file opens:", self.zoom)
+        lay = QVBoxLayout(self)
+        lay.addLayout(form)
+        lay.addWidget(self.remember)
+        lay.addWidget(QLabel("Files that are already open keep the zoom they have."))
+        lay.addWidget(self.buttons)
+
+    def _update(self):
+        self.buttons.button(QDialogButtonBox.Ok).setEnabled(parse_zoom(self.zoom.currentText()) is not None)
+
+    def accept(self):
+        choice = parse_zoom(self.zoom.currentText())
+        if choice is None:
+            return
+        settings().setValue("view/default_zoom", zoom_text(*choice))
+        settings().setValue("view/remember", self.remember.isChecked())
+        if not self.remember.isChecked():
+            forget_views()      # nothing kept that the user has said not to keep
+        super().accept()
 
 
 # --- terms of use -----------------------------------------------------------------------------------------------

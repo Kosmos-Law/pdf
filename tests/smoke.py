@@ -1664,6 +1664,73 @@ w.page_box.returnPressed.emit()
 pump()
 check("typing a page number jumps there", t.view.current_page == 3)
 
+# --- preferences: the zoom a file opens at ------------------------------------------------------------------------
+def new_tab_zoom():
+    tab = w.add_doc(PdfDocument(fitz.open(os.path.join(SAMPLES, "sample.pdf")), title="zoom.pdf")); pump()
+    got = (tab.view.fit, round(tab.view.zoom * 100), w.zoom_box.currentText())
+    w.close_tab(tab); pump()
+    return got
+
+
+_edit = next(m_.menu() for m_ in w.main_menu.actions() if m_.text() == "&Edit")
+_empty = window.MainWindow(); _empty.show(); pump()
+check("Preferences is in the Edit menu, and can be used with no file open",
+      w.actions_by_name["preferences"] in _edit.actions() and _empty.actions_by_name["preferences"].isEnabled()
+      and not _empty.actions_by_name["save"].isEnabled())
+_empty.close(); pump()
+check("a file opens at Fit width until a zoom is chosen", new_tab_zoom()[0] == "width", str(new_tab_zoom()))
+prefs = dialogs.PreferencesDialog(w)
+check("the dialog shows the current choice", prefs.zoom.currentText() == "Fit width", prefs.zoom.currentText())
+prefs.zoom.setEditText("nonsense")
+check("something that is no zoom can't be accepted", not prefs.buttons.button(prefs.buttons.StandardButton.Ok).isEnabled())
+prefs.zoom.setEditText("125"); prefs.accept()
+others = [(t_.view.fit, t_.view.zoom) for t_ in w.doc_tabs()]
+check("a percentage is remembered, and new files open at it", dialogs.settings().value("view/default_zoom") == "125%"
+      and new_tab_zoom() == (None, 125, "125%"), f"{dialogs.settings().value('view/default_zoom')} {new_tab_zoom()}")
+check("files already open keep their zoom", others == [(t_.view.fit, t_.view.zoom) for t_ in w.doc_tabs()])
+prefs = dialogs.PreferencesDialog(w)
+prefs.zoom.setCurrentIndex(prefs.zoom.findText("Fit page")); prefs.accept()
+check("Fit page likewise", new_tab_zoom()[::2] == ("page", "Fit page"), str(new_tab_zoom()))
+dialogs.settings().setValue("view/default_zoom", "garbled")
+check("an unreadable setting falls back to Fit width", new_tab_zoom()[0] == "width")
+dialogs.settings().remove("view/default_zoom")
+
+# a file reopens at the page and zoom it was left at
+_left = os.path.join(OUT, "left.pdf")
+shutil.copy(os.path.join(SAMPLES, "sample.pdf"), _left)
+
+
+def reopen(leave=None):
+    """Open the file, say where it came up, optionally move (zoom, fit, page), and close it."""
+    w.open_files([_left]); settle(100)
+    tab = w.tab
+    got = (tab.view.fit, round(tab.view.zoom * 100), tab.view.current_page)
+    if leave:
+        tab.view.set_zoom(leave[0], leave[1]); tab.view.go_to_page(leave[2]); pump()
+    w.close_tab(tab); pump()
+    return got
+
+
+first = reopen(leave=(1.5, None, 2))
+check("a file not seen before opens at the default zoom, on its first page", first[0] == "width" and first[2] == 0, str(first))
+back = reopen(leave=(None, "page", 1))
+check("closed at 150% on page 3, it reopens there", back == (None, 150, 2), str(back))
+back = reopen()
+check("a fit is remembered as a fit", back[0] == "page" and back[2] == 1, str(back))
+dialogs.settings().setValue("view/default_zoom", "200%")
+check("the file's own place wins over the default zoom", reopen()[0] == "page")
+prefs = dialogs.PreferencesDialog(w)
+prefs.remember.setChecked(False); prefs.accept()
+back = reopen(leave=(0.5, None, 2))
+check("with remembering turned off, files open at the default, and nothing is kept",
+      back == (None, 200, 0) and dialogs.settings().value("view/files") is None, str(back))
+prefs = dialogs.PreferencesDialog(w)
+prefs.remember.setChecked(True); prefs.accept()
+reopen(leave=(0.5, None, 2))
+w.clear_recent()
+check("Clear Recent Documents forgets where files were left as well", reopen() == (None, 200, 0))
+dialogs.settings().remove("view/default_zoom"); dialogs.forget_views()
+
 w.tabs.setCurrentWidget(t)
 pump(200)
 w.grab().save(os.path.join(OUT, "04-final.png"))
