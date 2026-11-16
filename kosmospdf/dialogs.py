@@ -14,7 +14,7 @@ from PySide6.QtWidgets import (QAbstractItemView, QCheckBox, QComboBox, QDialog,
                                QPushButton, QRadioButton, QSpinBox, QVBoxLayout, QWidget)
 
 from .core import PAGE_SIZES, is_image, load_any
-from .theme import lucide
+from .theme import dialog_icon
 
 POSITIONS = ["Bottom right", "Bottom center", "Bottom left", "Top right", "Top center", "Top left"]
 
@@ -738,14 +738,19 @@ class PreferencesDialog(QDialog):
             b.clicked.connect(slot)
             return b
 
-        self.add_button = button("&Add  →", "Put the selected item on the toolbar", self.add_item)
-        self.remove_button = button("←  Re&move", "Take the selected item off the toolbar", self.remove_item)
+        self.add_button = button("&Add", "Put the selected item on the toolbar", self.add_item)
+        self.remove_button = button("Re&move", "Take the selected item off the toolbar", self.remove_item)
         self.up_button = button("Move &Up", "Move the selected item towards the left of the toolbar", lambda: self.move_item(-1))
         self.down_button = button("Move &Down", "Move the selected item towards the right of the toolbar",
                                   lambda: self.move_item(1))
-        ink = self.palette().color(QPalette.ButtonText)
-        for b, name in ((self.up_button, "chevron-up"), (self.down_button, "chevron-down")):
-            b.setIcon(lucide(name, ink))
+        # Each with a chevron for the way the item goes, drawn as the icons on OK and Cancel
+        # are, and set to the left so that the chevrons of a pair stand one above the other.
+        # The chevrons keep their colour while a button waits for something to be selected,
+        # which is how the dialog opens: faded, all four looked a different, paler set.
+        for b, name in ((self.add_button, "chevron-right"), (self.remove_button, "chevron-left"),
+                        (self.up_button, "chevron-up"), (self.down_button, "chevron-down")):
+            b.setIcon(dialog_icon(name, steady=True))
+            b.setStyleSheet("text-align:left;")
         self.reset_button = button("Reset to De&fault", "Put the toolbar back as it first was", self.reset_toolbar)
         columns = QHBoxLayout()
         for title, widget in (("Available", self.available), (None, (self.add_button, self.remove_button)),

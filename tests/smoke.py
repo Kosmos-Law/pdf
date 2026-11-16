@@ -1865,9 +1865,15 @@ check("Preferences shows the toolbar in one list, in order with its dividers, an
       and prefs.chosen.item(0).text() == "Page panel" and not prefs.chosen.item(0).icon().isNull()
       and not prefs.reset_button.isEnabled() and not prefs.up_button.isEnabled() and not prefs.add_button.isEnabled(),
       f"{prefs.chosen.keys()} {prefs.available.keys()}")
-check("Move Up and Move Down carry an up and a down chevron",
-      not prefs.up_button.icon().isNull() and not prefs.down_button.icon().isNull()
-      and prefs.up_button.icon().pixmap(16).toImage() != prefs.down_button.icon().pixmap(16).toImage())
+from kosmospdf import theme as _theme  # noqa: E402
+_four = [prefs.add_button, prefs.remove_button, prefs.up_button, prefs.down_button]
+_imgs = [b.icon().pixmap(18).toImage() for b in _four]
+check("Add, Remove, Move Up and Move Down each carry their own chevron, drawn as the icons on OK and Cancel are",
+      not any(b.icon().isNull() for b in _four) and all(_imgs[i] != _imgs[k] for i in range(4) for k in range(i))
+      and _imgs == [_theme.dialog_icon(f"chevron-{n}").pixmap(18).toImage() for n in ("right", "left", "up", "down")]
+      and not any(b.isEnabled() for b in _four)       # nothing selected yet: and still at full colour
+      and _imgs == [b.icon().pixmap(18, b.icon().Mode.Disabled).toImage() for b in _four]
+      and [b.text() for b in _four] == ["&Add", "Re&move", "Move &Up", "Move &Down"])
 prefs.reject()
 _seen = {}
 _w2 = window.MainWindow(); _w2.show(); pump()

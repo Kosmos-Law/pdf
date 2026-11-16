@@ -110,12 +110,13 @@ def icon_sizes():
     return sorted({round(n * r) for n in (NOTE_MENU_ICON, TOOLBAR_ICON) for r in ratios})
 
 
-def lucide(name, color, dot=False, stripe=None, sizes=None, gap=0.0):
+def lucide(name, color, dot=False, stripe=None, sizes=None, gap=0.0, disabled=0.38):
     """A crisp QIcon from a bundled Lucide SVG in the given colour, optionally with a
     red dot in its bottom right corner (see BADGE), or drawn a little smaller above a
     stripe of colour (an RGB tuple), like the highlighter in a word processor. Drawn at
     the toolbar's sizes unless `sizes` (in device pixels) says otherwise. `gap` leaves
-    clear space to the right, as a fraction of the size (see DIALOG_ICON_GAP)."""
+    clear space to the right, as a fraction of the size (see DIALOG_ICON_GAP). `disabled`
+    is how strongly it shows on a button that can't be used: faint, unless told otherwise."""
     path = os.path.join(ICON_DIR, f"{name}.svg")
     if not os.path.exists(path):
         return QIcon()
@@ -123,7 +124,7 @@ def lucide(name, color, dot=False, stripe=None, sizes=None, gap=0.0):
     icon = QIcon()
     svg = svg.replace('stroke-width="2"', f'stroke-width="{ICON_STROKE}"')
     sizes = sizes or icon_sizes()
-    for mode, opacity in ((QIcon.Normal, ICON_OPACITY), (QIcon.Disabled, 0.38 * ICON_OPACITY)):
+    for mode, opacity in ((QIcon.Normal, ICON_OPACITY), (QIcon.Disabled, disabled * ICON_OPACITY)):
         data = QByteArray(svg.replace('stroke="currentColor"',
                                       f'stroke="{color.name()}" stroke-opacity="{opacity}"').encode())
         renderer = QSvgRenderer(data)
@@ -164,6 +165,14 @@ MESSAGE_ICON = 24      # px, the symbol beside a message box's text (Qt's own is
 # clear space on their right (px), and the buttons show icons this much wider to fit it.
 DIALOG_ICON_GAP = 5
 SPIN_TEXT_MARGIN = 6   # px before the text in a spin box (the font size box, Bates numbers)
+
+
+def dialog_icon(name, steady=False):
+    """A Lucide icon for a button in a dialog, as OK and Cancel have theirs: in the
+    colour of button text, with the gap on its right. A steady one keeps its full
+    colour while its button can't be used (the button's text still greys)."""
+    return lucide(name, QApplication.palette().color(QPalette.ButtonText), gap=DIALOG_ICON_GAP / TOOLBAR_ICON,
+                  disabled=1.0 if steady else 0.38)
 
 
 class LucideStyle(QProxyStyle):
