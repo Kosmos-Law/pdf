@@ -754,7 +754,9 @@ class MainWindow(QMainWindow):
         self.addToolBar(tb)
         tb.addAction(a["thumbs"])
         tb.addSeparator()
-        for n in ("open", "save", "print", "ocr"):
+        # Find comes here, beside OCR (which is what makes a scan findable), and not by the zoom
+        # buttons: its magnifier looks too like theirs, and this far left a narrow window keeps it.
+        for n in ("open", "save", "print", "ocr", "find_bar"):
             tb.addAction(a[n])
         # Open is a split button: the button opens a file, and its arrow lists the recent ones.
         self.open_button = tb.widgetForAction(a["open"])
@@ -771,8 +773,8 @@ class MainWindow(QMainWindow):
         tb.addAction(a["zoom_out"])
         tb.addWidget(self.zoom_box)
         tb.addAction(a["zoom_in"])
-        for n in ("fit_width", "fit_page", "find_bar"):       # the two fits only if ticked in Preferences, as
-            tb.addAction(a[n])                                # with the page commands and the last group below
+        for n in ("fit_width", "fit_page"):                   # only if ticked in Preferences, as with the
+            tb.addAction(a[n])                                # page commands and the last group below
         tb.addSeparator()
         for n in ("rotate_left", "rotate_right", "delete_pages", "extract", "insert_file"):
             tb.addAction(a[n])

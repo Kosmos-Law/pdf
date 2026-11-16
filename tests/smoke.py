@@ -1105,9 +1105,9 @@ check("Esc closes the bar and clears the marks", fb.isHidden() and not ft.view.f
 w.actions_by_name["find"].trigger(); settle()
 check("reopening brings the last search back", fb.isVisible() and fb.edit.text() == "lazy dog" and ft.view.find_hits)
 fbtn = w.toolbar.widgetForAction(w.actions_by_name["find_bar"])
-zoom_at = w.toolbar.actions().index(w.actions_by_name["zoom_in"])
-check("Find button sits just after the zoom controls, pressed while the bar is open",
-      w.toolbar.actions()[zoom_at + 1] is w.actions_by_name["find_bar"] and fbtn.isChecked())
+ocr_at = w.toolbar.actions().index(w.actions_by_name["ocr"])
+check("Find button sits just after OCR, away from the zoom buttons, pressed while the bar is open",
+      w.toolbar.actions()[ocr_at + 1] is w.actions_by_name["find_bar"] and fbtn.isChecked())
 QTest.mouseClick(fbtn, Qt.LeftButton); pump()
 check("clicking it again closes the bar", fb.isHidden() and not fbtn.isChecked() and not ft.view.find_hits)
 QTest.mouseClick(fbtn, Qt.LeftButton); pump()
@@ -1800,7 +1800,7 @@ w.actions_by_name["preferences"].trigger(); pump()
 dialogs.PreferencesDialog.exec = _exec
 _now = toolbar_now(w)
 check("unticked buttons leave the toolbar, in every window, and no divider is left doubled or dangling",
-      _now == ["thumbs", "|", "open", "save", "|", "?", "?", "zoom_out", "?", "zoom_in", "find_bar", "|",
+      _now == ["thumbs", "|", "open", "save", "find_bar", "|", "?", "?", "zoom_out", "?", "zoom_in", "|",
                "mode_hand", "mode_select", "?", "mode_label"] and toolbar_now(_w2) == _now and not w.font_size.isVisible(),
       str(_now))
 _file = next(m_.menu() for m_ in w.main_menu.actions() if m_.text() == "&File")
@@ -1839,8 +1839,8 @@ _btn = {n: w.toolbar.widgetForAction(w.actions_by_name[n]) for n in ("mode_redac
                                                                      "combine", "fit_page", "delete_pages")}
 check("the extra buttons, ticked, each go where they belong: fits by the zoom, page commands by Rotate, "
       "Redact with the tools, and the batch commands in a group at the end",
-      _now == ["thumbs", "|", "open", "save", "print", "ocr", "|", "undo", "redo", "|", "?", "?", "zoom_out", "?", "zoom_in",
-               "fit_width", "fit_page", "find_bar", "|", "rotate_left", "rotate_right", "delete_pages", "extract",
+      _now == ["thumbs", "|", "open", "save", "print", "ocr", "find_bar", "|", "undo", "redo", "|", "?", "?", "zoom_out", "?", "zoom_in",
+               "fit_width", "fit_page", "|", "rotate_left", "rotate_right", "delete_pages", "extract",
                "insert_file", "|", "mode_hand", "mode_select", "?", "mode_typewriter", "?", "mode_label", "mode_redact",
                "|", "bates", "bates_files", "label_files", "combine"], str(_now))
 check("those that would be hard to tell apart carry a word, and all have an icon",
