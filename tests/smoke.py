@@ -1719,6 +1719,25 @@ w.set_hl_color(HIGHLIGHT_COLORS["Yellow"]); w.font_size.setValue(12); w.set_mode
 for _k in ("tools/typewriter_size", "tools/highlight"):     # again: putting the window back saved them
     dialogs.settings().remove(_k)
 
+# --- Ctrl- and Shift-click in the page panel ----------------------------------------------------------------------
+def panel_click(row, mod=Qt.NoModifier):
+    th = t.thumbs
+    QTest.mouseClick(th.viewport(), Qt.LeftButton, mod, th.visualItemRect(th.item(row)).center()); pump()
+    return th.selected_pages()
+
+
+w.tabs.setCurrentWidget(t); t.thumbs.setFocus(); pump()
+panel_click(0)
+_at = t.view.current_page
+_picked = [panel_click(2, Qt.ControlModifier), panel_click(4, Qt.ControlModifier)]
+check("Ctrl-click adds pages that are apart to the selection, and the page in view stays put",
+      _picked == [[0, 2], [0, 2, 4]] and t.view.current_page == _at, f"{_picked} {t.view.current_page}")
+check("Ctrl-click on a selected page takes it out again", panel_click(2, Qt.ControlModifier) == [0, 4])
+check("a plain click goes back to one page, and goes to it", panel_click(1) == [1] and t.view.current_page == 1)
+check("Shift-click selects the run, and Ctrl-click adds to that",
+      panel_click(3, Qt.ShiftModifier) == [1, 2, 3] and panel_click(5, Qt.ControlModifier) == [1, 2, 3, 5])
+panel_click(0)
+
 # the toolbar checklist: buttons left off, and put back where they were
 def toolbar_now(win):
     """What shows on the toolbar, in order: action names, "|" for a divider, "?" for a widget."""

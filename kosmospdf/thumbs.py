@@ -67,13 +67,14 @@ class ThumbPane(QListWidget):
         self._drag_pos = QPoint()
         self._scroll_timer = QTimer(self, interval=30, timeout=self._auto_scroll)
         self._syncing = False
+        self._picking = False         # a Ctrl- or Shift-click is under way: it selects pages, and goes nowhere
         self._centre_soon = QTimer(self, singleShot=True, interval=0, timeout=self._centre_columns)
         self.placeholder = QPixmap(THUMB_W, THUMB_H)
         self.placeholder.fill(QColor("#ffffff"))
         self.placeholder = framed(self.placeholder)
         self.apply_colors(Colors())
 
-        self.itemClicked.connect(lambda it: self.page_clicked.emit(self.row(it)))
+        self.itemClicked.connect(lambda it: self._picking or self.page_clicked.emit(self.row(it)))
         self.currentRowChanged.connect(self._row_changed)
         pdoc.structure_changed.connect(self.rebuild)
         pdoc.pages_changed.connect(self.refresh)
@@ -167,8 +168,22 @@ class ThumbPane(QListWidget):
         self._syncing = False
 
     def _row_changed(self, row):
-        if not self._syncing and row >= 0 and self.hasFocus():
+        if not self._syncing and not self._picking and row >= 0 and self.hasFocus():
             self.page_clicked.emit(row)
+
+    # A click with Ctrl or Shift held adds pages to the selection or takes them out of it,
+    # as in a file manager, and leaves the page view where it is. Going to the page would
+    # have the view report its new page back while Qt is half-way through the click, and
+    # the selection made so far would be replaced by that one page.
+    def mousePressEvent(self, e):
+        self._picking = bool(e.modifiers() & (Qt.ControlModifier | Qt.ShiftModifier))
+        super().mousePressEvent(e)
+
+    def mouseReleaseEvent(self, e):
+        try:
+            super().mouseReleaseEvent(e)
+        finally:
+            self._picking = False
 
     def keyPressEvent(self, e):
         # Handle these here: QListWidget would otherwise copy the item label on Ctrl+C.
@@ -194,6 +209,7 @@ class ThumbPane(QListWidget):
             icon = self._badge(icon, len(pages))
         drag.setPixmap(icon)
         drag.exec(Qt.MoveAction | Qt.CopyAction, Qt.MoveAction)
+        self._picking = False             # the drag took the mouse release that would have ended a Ctrl-click
         self._drop_at = None
         self.viewport().update()
 
