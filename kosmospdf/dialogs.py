@@ -576,9 +576,19 @@ TOOLBAR_PARTS = {"thumbs": "Page panel", "save": "Save", "print": "Print", "ocr"
                  "typewriter": "Typewriter", "label": "Exhibit Label"}
 
 
+# More buttons, for those who want them: not on the toolbar until ticked, since it is full as it is.
+TOOLBAR_EXTRAS = {"fit": "Fit Width and Fit Page", "pages": "Delete, Copy Out, Insert Pages", "redact": "Redact",
+                  "bates": "Bates Numbering", "bates_files": "Bates Number Files",
+                  "label_files": "Label Exhibit Files", "combine": "Combine Files"}
+
+
 def hidden_toolbar_parts(s=None):
-    hidden = str((s or settings()).value("toolbar/hidden", "") or "")
-    return {part for part in hidden.split(",") if part in TOOLBAR_PARTS}
+    """What is left off the toolbar: the usual buttons the user has unticked, and the extra
+    ones not ticked."""
+    s = s or settings()
+    hidden = str(s.value("toolbar/hidden", "") or "").split(",")
+    shown = str(s.value("toolbar/shown", "") or "").split(",")
+    return {part for part in hidden if part in TOOLBAR_PARTS} | {part for part in TOOLBAR_EXTRAS if part not in shown}
 
 
 # Where each file was left (its zoom and page), so that it reopens there: a list of
@@ -647,14 +657,21 @@ class PreferencesDialog(QDialog):
         self.toolbar_group = QGroupBox("Toolbar buttons")
         grid = QGridLayout(self.toolbar_group)
         self.toolbar_boxes = {}
-        rows = (len(TOOLBAR_PARTS) + 2) // 3
-        for n, (part, text) in enumerate(TOOLBAR_PARTS.items()):
-            box = self.toolbar_boxes[part] = QCheckBox(text)
-            box.setChecked(part not in hidden)
-            grid.addWidget(box, n % rows, n // rows)
+        row = 0
+        for parts, heading in ((TOOLBAR_PARTS, None), (TOOLBAR_EXTRAS, "More buttons:")):
+            if heading:
+                grid.addWidget(QLabel(heading), row, 0, 1, 3)
+                row += 1
+            rows = (len(parts) + 2) // 3
+            for n, (part, text) in enumerate(parts.items()):
+                box = self.toolbar_boxes[part] = QCheckBox(text)
+                box.setChecked(part not in hidden)
+                grid.addWidget(box, row + n % rows, n // rows)
+            row += rows
+        self.toolbar_boxes["pages"].setToolTip("Delete Pages, Copy Pages to New PDF and Insert Pages from File")
         note = QLabel("A button left off is still in the menus, and its shortcut still works.")
         note.setForegroundRole(QPalette.PlaceholderText)
-        grid.addWidget(note, rows, 0, 1, 3)
+        grid.addWidget(note, row, 0, 1, 3)
         self.buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
         self.buttons.accepted.connect(self.accept)
         self.buttons.rejected.connect(self.reject)
@@ -677,7 +694,9 @@ class PreferencesDialog(QDialog):
             return
         settings().setValue("view/default_zoom", zoom_text(*choice))
         settings().setValue("tools/open_with", self.tool.currentData())
-        settings().setValue("toolbar/hidden", ",".join(p for p, box in self.toolbar_boxes.items() if not box.isChecked()))
+        boxes = self.toolbar_boxes
+        settings().setValue("toolbar/hidden", ",".join(p for p in TOOLBAR_PARTS if not boxes[p].isChecked()))
+        settings().setValue("toolbar/shown", ",".join(p for p in TOOLBAR_EXTRAS if boxes[p].isChecked()))
         settings().setValue("view/remember", self.remember.isChecked())
         if not self.remember.isChecked():
             forget_views()      # nothing kept that the user has said not to keep

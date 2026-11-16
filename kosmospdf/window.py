@@ -62,12 +62,15 @@ LUCIDE = {
 }
 
 
-# What each entry of Preferences' toolbar checklist (dialogs.TOOLBAR_PARTS) puts on the
-# toolbar: actions by name, and "font_size" for the typewriter's size box.
+# What each entry of Preferences' toolbar checklist (dialogs.TOOLBAR_PARTS, and then
+# TOOLBAR_EXTRAS) puts on the toolbar: actions by name, and "font_size" for the typewriter's size box.
 TOOLBAR_MEMBERS = {"thumbs": ["thumbs"], "save": ["save"], "print": ["print"], "ocr": ["ocr"], "undo": ["undo", "redo"],
                    "find": ["find_bar"], "rotate": ["rotate_left", "rotate_right"], "hand": ["mode_hand"],
                    "select": ["mode_select"], "highlight": ["mode_highlight"],
-                   "typewriter": ["mode_typewriter", "font_size"], "label": ["mode_label"]}
+                   "typewriter": ["mode_typewriter", "font_size"], "label": ["mode_label"],
+                   "fit": ["fit_width", "fit_page"], "pages": ["delete_pages", "extract", "insert_file"],
+                   "redact": ["mode_redact"], "bates": ["bates"], "bates_files": ["bates_files"],
+                   "label_files": ["label_files"], "combine": ["combine"]}
 
 
 class MainToolBar(QToolBar):
@@ -705,6 +708,8 @@ class MainWindow(QMainWindow):
             a = A(f"mode_{name}", text, slot, key, tip=f"{tip} ({key})" if key else tip, checkable=True)
             self.mode_group.addAction(a)
         self.actions_by_name["mode_label"].setIconText("Label")
+        for name, text in (("bates", "Bates"), ("bates_files", "Bates Files"), ("label_files", "Label Files")):
+            self.actions_by_name[name].setIconText(text)      # on the toolbar, if put there in Preferences
         self.actions_by_name[f"mode_{self.mode}"].setChecked(True)
 
     def build_menus(self):
@@ -766,10 +771,11 @@ class MainWindow(QMainWindow):
         tb.addAction(a["zoom_out"])
         tb.addWidget(self.zoom_box)
         tb.addAction(a["zoom_in"])
-        tb.addAction(a["find_bar"])
+        for n in ("fit_width", "fit_page", "find_bar"):       # the two fits only if ticked in Preferences, as
+            tb.addAction(a[n])                                # with the page commands and the last group below
         tb.addSeparator()
-        tb.addAction(a["rotate_left"])
-        tb.addAction(a["rotate_right"])
+        for n in ("rotate_left", "rotate_right", "delete_pages", "extract", "insert_file"):
+            tb.addAction(a[n])
         tb.addSeparator()
         tb.addAction(a["mode_hand"])
         tb.addAction(a["mode_select"])
@@ -790,6 +796,10 @@ class MainWindow(QMainWindow):
         tb.addAction(a["mode_typewriter"])
         self._toolbar_widgets["font_size"] = tb.addWidget(self.font_size)
         tb.addAction(a["mode_label"])
+        tb.addAction(a["mode_redact"])
+        tb.addSeparator()
+        for n in ("bates", "bates_files", "label_files", "combine"):
+            tb.addAction(a[n])
         tb.setToolButtonStyle(Qt.ToolButtonIconOnly)
         self._toolbar_order = tb.actions()    # everything, in order: apply_toolbar puts back what it took off
         self.apply_toolbar()
@@ -831,7 +841,8 @@ class MainWindow(QMainWindow):
         if last and not group:
             last.setVisible(False)        # nothing after it
         # Common commands are icons with tooltips; most tools keep a label so they are easy to find (Move, a hand, needs none).
-        labelled = {a[n] for n in ("mode_select", "mode_highlight", "mode_typewriter", "mode_label", "ocr")}
+        labelled = {a[n] for n in ("mode_select", "mode_highlight", "mode_typewriter", "mode_label", "ocr",
+                                   "mode_redact", "bates", "bates_files", "label_files")}
         for b in tb.findChildren(QToolButton):
             if b.defaultAction() in labelled:
                 b.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)

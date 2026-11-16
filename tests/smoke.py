@@ -1780,8 +1780,10 @@ def toolbar_now(win):
 _tb_before = toolbar_now(w)
 _w2 = window.MainWindow(); _w2.show(); pump()
 prefs = dialogs.PreferencesDialog(w)
-check("every optional button starts ticked", all(b.isChecked() for b in prefs.toolbar_boxes.values())
-      and list(prefs.toolbar_boxes) == list(dialogs.TOOLBAR_PARTS) == list(window.TOOLBAR_MEMBERS))
+check("the usual buttons start ticked, and the extra ones not",
+      all(prefs.toolbar_boxes[p_].isChecked() for p_ in dialogs.TOOLBAR_PARTS)
+      and not any(prefs.toolbar_boxes[p_].isChecked() for p_ in dialogs.TOOLBAR_EXTRAS)
+      and list(prefs.toolbar_boxes) == list(dialogs.TOOLBAR_PARTS) + list(dialogs.TOOLBAR_EXTRAS) == list(window.TOOLBAR_MEMBERS))
 for part in ("print", "ocr", "undo", "rotate", "typewriter"):
     prefs.toolbar_boxes[part].setChecked(False)
 _exec = dialogs.PreferencesDialog.exec
@@ -1801,10 +1803,10 @@ _w3 = window.MainWindow(); _w3.show(); pump()
 check("a window opened afterwards has the same toolbar", toolbar_now(_w3) == _now)
 _w2.close(); _w3.close(); pump()
 prefs = dialogs.PreferencesDialog(w)
-check("the dialog shows what is left off", [p_ for p_, b in prefs.toolbar_boxes.items() if not b.isChecked()]
+check("the dialog shows what is left off", [p_ for p_ in dialogs.TOOLBAR_PARTS if not prefs.toolbar_boxes[p_].isChecked()]
       == ["print", "ocr", "undo", "rotate", "typewriter"])
-for b in prefs.toolbar_boxes.values():
-    b.setChecked(True)
+for p_ in dialogs.TOOLBAR_PARTS:
+    prefs.toolbar_boxes[p_].setChecked(True)
 prefs.accept(); w.apply_toolbar(); pump()
 check("ticked again, they come back where they were, OCR and Typewriter with their labels",
       toolbar_now(w) == _tb_before and w.font_size.isVisible()
@@ -1820,6 +1822,31 @@ check("with everything unticked, Open, the page and zoom boxes and the menu butt
       toolbar_now(w) == ["open", "|", "?", "?", "zoom_out", "?", "zoom_in"] and w.menu_button.isVisible(), str(toolbar_now(w)))
 dialogs.settings().remove("toolbar/hidden"); w.apply_toolbar(); pump()
 check("and all of it comes back", toolbar_now(w) == _tb_before)
+prefs = dialogs.PreferencesDialog(w)
+for p_ in dialogs.TOOLBAR_EXTRAS:
+    prefs.toolbar_boxes[p_].setChecked(True)
+prefs.accept(); w.apply_toolbar(); pump()
+_now = toolbar_now(w)
+_btn = {n: w.toolbar.widgetForAction(w.actions_by_name[n]) for n in ("mode_redact", "bates", "bates_files", "label_files",
+                                                                     "combine", "fit_page", "delete_pages")}
+check("the extra buttons, ticked, each go where they belong: fits by the zoom, page commands by Rotate, "
+      "Redact with the tools, and the batch commands in a group at the end",
+      _now == ["thumbs", "|", "open", "save", "print", "ocr", "|", "undo", "redo", "|", "?", "?", "zoom_out", "?", "zoom_in",
+               "fit_width", "fit_page", "find_bar", "|", "rotate_left", "rotate_right", "delete_pages", "extract",
+               "insert_file", "|", "mode_hand", "mode_select", "?", "mode_typewriter", "?", "mode_label", "mode_redact",
+               "|", "bates", "bates_files", "label_files", "combine"], str(_now))
+check("those that would be hard to tell apart carry a word, and all have an icon",
+      [_btn[n].text() for n in ("mode_redact", "bates", "bates_files", "label_files")]
+      == ["Redact", "Bates", "Bates Files", "Label Files"]
+      and all(_btn[n].toolButtonStyle() == Qt.ToolButtonTextBesideIcon for n in ("mode_redact", "bates", "bates_files", "label_files"))
+      and _btn["combine"].toolButtonStyle() == Qt.ToolButtonIconOnly and not any(b.icon().isNull() for b in _btn.values()))
+_btn["mode_redact"].click(); pump()
+check("the Redact button switches to redacting, and shows pressed", w.mode == "redact" and w.redact_bar.isVisible()
+      and _btn["mode_redact"].isChecked())
+w.set_mode("select")
+check("the menus keep their full names", w.actions_by_name["bates_files"].text() == "Bates Number &Files…")
+dialogs.settings().remove("toolbar/shown"); w.apply_toolbar(); pump()
+check("unticked again, the toolbar is as it began", toolbar_now(w) == _tb_before)
 
 # a file reopens at the page and zoom it was left at
 _left = os.path.join(OUT, "left.pdf")
