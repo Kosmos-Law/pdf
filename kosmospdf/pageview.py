@@ -593,22 +593,46 @@ class PageView(QScrollArea):
         if self.fit or self.canvas.width() < self.viewport().width():
             self.relayout()
 
-    def set_zoom(self, zoom=None, fit=None):
+    def set_zoom(self, zoom=None, fit=None, anchor=None):
+        """Zoom to a factor or a fit. The spot on the page under `anchor` (a position in the
+        viewport: the mouse, for the wheel) stays under it; with none given, what is at the
+        middle of the viewport stays in the middle, so zooming doesn't drift to a corner."""
+        vp = self.viewport()
+        anchor = QPointF(anchor) if anchor is not None else QPointF(vp.width() / 2, vp.height() / 2)
+        held = self._spot_at(anchor)
         self.fit = fit
         if zoom is not None:
             self.zoom = max(0.1, min(zoom, 8.0))
         self.relayout()
+        if held:
+            i, fx, fy = held
+            r = self.page_rects[i]
+            self.horizontalScrollBar().setValue(round(r.left() + fx * r.width() - anchor.x()))
+            self.verticalScrollBar().setValue(round(r.top() + fy * r.height() - anchor.y()))
         self.canvas.update()
 
-    def step_zoom(self, steps):
-        """Zoom in (steps > 0) or out by that many of ZOOM_LEVELS."""
+    def _spot_at(self, pos):
+        """The spot under a viewport position, as (page, x, y) with x and y fractions of that
+        page's width and height: the same spot whatever the zoom. Between or beside pages,
+        it is measured from the nearest page. None when there are no pages."""
+        if not self.page_rects:
+            return None
+        x = pos.x() + self.horizontalScrollBar().value()
+        y = pos.y() + self.verticalScrollBar().value()
+        i = min(range(len(self.page_rects)),
+                key=lambda k: max(self.page_rects[k].top() - y, y - self.page_rects[k].bottom(), 0))
+        r = self.page_rects[i]
+        return i, (x - r.left()) / max(1, r.width()), (y - r.top()) / max(1, r.height())
+
+    def step_zoom(self, steps, anchor=None):
+        """Zoom in (steps > 0) or out by that many of ZOOM_LEVELS, about `anchor` (see set_zoom)."""
         z = self.zoom
         for _ in range(abs(steps)):
             if steps > 0:
                 z = next((lv for lv in ZOOM_LEVELS if lv > z * 1.01), ZOOM_LEVELS[-1])
             else:
                 z = next((lv for lv in reversed(ZOOM_LEVELS) if lv < z * 0.99), ZOOM_LEVELS[0])
-        self.set_zoom(z)
+        self.set_zoom(z, anchor=anchor)
 
     def wheelEvent(self, e):
         if e.modifiers() & Qt.ControlModifier:
@@ -621,7 +645,7 @@ class PageView(QScrollArea):
             steps = int(self._wheel_zoom / 120)
             if steps:
                 self._wheel_zoom -= steps * 120
-                self.step_zoom(steps)
+                self.step_zoom(steps, anchor=e.position())     # about the mouse, as in a browser or a map
             e.accept()
             return
         super().wheelEvent(e)

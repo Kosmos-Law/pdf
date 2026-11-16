@@ -7,7 +7,7 @@ import sys
 
 import pymupdf as fitz
 from PySide6.QtCore import QEvent, QPoint, QPointF, QSize, Qt, QTimer
-from PySide6.QtGui import QColor, QGuiApplication, QMouseEvent
+from PySide6.QtGui import QColor, QGuiApplication, QMouseEvent, QWheelEvent
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication, QDialog, QFileDialog, QMenu, QMessageBox, QToolButton
 
@@ -311,6 +311,38 @@ check("small touchpad movements add up to one step, not one each", (round(z1 * 1
       f"{z1} {v.zoom}")
 w.actions_by_name["zoom_in"].trigger(); w.actions_by_name["zoom_in"].trigger(); pump()
 check("Zoom In uses the same steps", round(v.zoom * 100) == 150, str(v.zoom))
+# zooming keeps its place: the middle of the window, or the spot under the mouse
+def spot(pos):
+    """Where on its page (in points) the spot at this viewport position is."""
+    i, fx, fy = v._spot_at(QPointF(pos))
+    return i, round(fx * v.page_size(i)[0]), round(fy * v.page_size(i)[1])
+
+
+def off_by(a, b):
+    return 99 if a[0] != b[0] else max(abs(a[1] - b[1]), abs(a[2] - b[2]))
+
+
+_mid = v.viewport().rect().center()
+v.set_zoom(3.0); v.go_to_page(1); pump()
+v.horizontalScrollBar().setValue(v.horizontalScrollBar().maximum() * 3 // 4)
+v.verticalScrollBar().setValue(v.verticalScrollBar().value() + 500); pump()
+_was = spot(_mid)
+w.actions_by_name["zoom_in"].trigger(); pump()
+_in = spot(_mid)
+w.actions_by_name["zoom_out"].trigger(); w.actions_by_name["zoom_out"].trigger(); pump()
+check("Zoom In and Out keep what is in the middle of the window there, not drifting up and left",
+      v.horizontalScrollBar().value() > 0 and off_by(_was, _in) <= 2 and off_by(_was, spot(_mid)) <= 2,
+      f"{_was} {_in} {spot(_mid)}")
+w.zoom_box.textActivated.emit("400%"); pump()
+check("so does choosing a zoom from the list", round(v.zoom * 100) == 400 and off_by(_was, spot(_mid)) <= 2, str(spot(_mid)))
+_corner = QPoint(v.viewport().width() * 4 // 5, v.viewport().height() // 5)
+_was = spot(_corner)
+for _dy in (120, -120, -120):
+    app.sendEvent(v.viewport(), QWheelEvent(QPointF(_corner), QPointF(v.viewport().mapToGlobal(_corner)), QPoint(),
+                                            QPoint(0, _dy), Qt.NoButton, Qt.ControlModifier, Qt.NoScrollPhase, False))
+    pump()
+check("Ctrl+wheel zooms about the mouse: the spot under it stays under it", round(v.zoom * 100) == 300
+      and off_by(_was, spot(_corner)) <= 2, f"{_was} {spot(_corner)} {v.zoom}")
 v.set_zoom(zoom0, fit=fit0); pump()
 w.set_mode("highlight")
 w.open_files([os.path.join(SAMPLES, "scan.png")]); pump()     # an image: opened, but kept out of recent files
