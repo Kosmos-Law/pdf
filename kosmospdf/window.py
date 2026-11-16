@@ -1734,9 +1734,9 @@ class MainWindow(QMainWindow):
             self.statusBar().showMessage("The redacted copy is open in its own tab, not yet saved.", 10000)
 
     def preferences(self):
-        if dialogs.PreferencesDialog(self).exec():
-            for w in WINDOWS:
-                w.apply_toolbar()
+        dlg = dialogs.PreferencesDialog(self)
+        dlg.toolbar_changed.connect(lambda: [w.apply_toolbar() for w in WINDOWS])     # as each box is ticked
+        dlg.exec()
 
     def about(self):
         QMessageBox.about(self, "Kosmos PDF", f"Kosmos PDF {QApplication.instance().applicationVersion()}\n"

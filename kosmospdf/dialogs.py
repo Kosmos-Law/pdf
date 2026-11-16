@@ -635,9 +635,15 @@ def forget_views():
 
 
 class PreferencesDialog(QDialog):
+    # A toolbar box was ticked or unticked, and the setting changed with it: the windows
+    # redo their toolbars there and then, so the user sees what each box does. Cancel puts
+    # the toolbar back as it was.
+    toolbar_changed = Signal()
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Preferences")
+        self._toolbar_was = {k: settings().value(k) for k in ("toolbar/hidden", "toolbar/shown")}
         self.zoom = QComboBox(editable=True)
         self.zoom.addItems(ZOOM_CHOICES)
         self.zoom.setInsertPolicy(QComboBox.NoInsert)
@@ -666,10 +672,11 @@ class PreferencesDialog(QDialog):
             for n, (part, text) in enumerate(parts.items()):
                 box = self.toolbar_boxes[part] = QCheckBox(text)
                 box.setChecked(part not in hidden)
+                box.toggled.connect(self._toolbar_ticked)
                 grid.addWidget(box, row + n % rows, n // rows)
             row += rows
         self.toolbar_boxes["pages"].setToolTip("Delete Pages, Copy Pages to New PDF and Insert Pages from File")
-        note = QLabel("A button left off is still in the menus, and its shortcut still works.")
+        note = QLabel("The toolbar changes as you tick. A button left off is still in the\nmenus, and its shortcut still works.")
         note.setForegroundRole(QPalette.PlaceholderText)
         grid.addWidget(note, row, 0, 1, 3)
         self.buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
@@ -685,6 +692,19 @@ class PreferencesDialog(QDialog):
         lay.addWidget(self.toolbar_group)
         lay.addWidget(self.buttons)
 
+    def _toolbar_ticked(self):
+        boxes = self.toolbar_boxes
+        settings().setValue("toolbar/hidden", ",".join(p for p in TOOLBAR_PARTS if not boxes[p].isChecked()))
+        settings().setValue("toolbar/shown", ",".join(p for p in TOOLBAR_EXTRAS if boxes[p].isChecked()))
+        self.toolbar_changed.emit()
+
+    def reject(self):
+        s = settings()
+        for key, was in self._toolbar_was.items():
+            s.remove(key) if was is None else s.setValue(key, was)
+        self.toolbar_changed.emit()
+        super().reject()
+
     def _update(self):
         self.buttons.button(QDialogButtonBox.Ok).setEnabled(parse_zoom(self.zoom.currentText()) is not None)
 
@@ -694,9 +714,6 @@ class PreferencesDialog(QDialog):
             return
         settings().setValue("view/default_zoom", zoom_text(*choice))
         settings().setValue("tools/open_with", self.tool.currentData())
-        boxes = self.toolbar_boxes
-        settings().setValue("toolbar/hidden", ",".join(p for p in TOOLBAR_PARTS if not boxes[p].isChecked()))
-        settings().setValue("toolbar/shown", ",".join(p for p in TOOLBAR_EXTRAS if boxes[p].isChecked()))
         settings().setValue("view/remember", self.remember.isChecked())
         if not self.remember.isChecked():
             forget_views()      # nothing kept that the user has said not to keep

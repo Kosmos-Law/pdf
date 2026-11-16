@@ -1784,10 +1784,18 @@ check("the usual buttons start ticked, and the extra ones not",
       all(prefs.toolbar_boxes[p_].isChecked() for p_ in dialogs.TOOLBAR_PARTS)
       and not any(prefs.toolbar_boxes[p_].isChecked() for p_ in dialogs.TOOLBAR_EXTRAS)
       and list(prefs.toolbar_boxes) == list(dialogs.TOOLBAR_PARTS) + list(dialogs.TOOLBAR_EXTRAS) == list(window.TOOLBAR_MEMBERS))
-for part in ("print", "ocr", "undo", "rotate", "typewriter"):
-    prefs.toolbar_boxes[part].setChecked(False)
+prefs.reject()
 _exec = dialogs.PreferencesDialog.exec
-dialogs.PreferencesDialog.exec = lambda self: (prefs.accept(), True)[1]
+
+
+def untick_some(self):
+    for part in ("print", "ocr", "undo", "rotate", "typewriter"):
+        self.toolbar_boxes[part].setChecked(False)
+    self.accept()
+    return 1
+
+
+dialogs.PreferencesDialog.exec = untick_some
 w.actions_by_name["preferences"].trigger(); pump()
 dialogs.PreferencesDialog.exec = _exec
 _now = toolbar_now(w)
@@ -1847,6 +1855,36 @@ w.set_mode("select")
 check("the menus keep their full names", w.actions_by_name["bates_files"].text() == "Bates Number &Files…")
 dialogs.settings().remove("toolbar/shown"); w.apply_toolbar(); pump()
 check("unticked again, the toolbar is as it began", toolbar_now(w) == _tb_before)
+# the toolbar follows the boxes while the dialog is open; Cancel puts it back
+_seen = {}
+
+
+def tick_about(self):
+    self.toolbar_boxes["print"].setChecked(False); self.toolbar_boxes["redact"].setChecked(True); pump()
+    _seen["live"] = toolbar_now(w)
+    self.toolbar_boxes["print"].setChecked(True); pump()
+    _seen["back"] = toolbar_now(w)
+    self.toolbar_boxes["save"].setChecked(False); pump()
+    self.reject() if _seen.get("cancel") else self.accept()
+    return 0
+
+
+dialogs.PreferencesDialog.exec = tick_about
+_seen["cancel"] = True
+w.actions_by_name["preferences"].trigger(); pump()
+check("ticking a box changes the toolbar there and then, before OK",
+      "print" not in _seen["live"] and "mode_redact" in _seen["live"] and "print" in _seen["back"], str(_seen["live"]))
+check("Cancel puts the toolbar back as it was, and the settings with it", toolbar_now(w) == _tb_before
+      and dialogs.hidden_toolbar_parts() == set(dialogs.TOOLBAR_EXTRAS))
+_seen["cancel"] = False
+w.actions_by_name["preferences"].trigger(); pump()
+check("OK keeps it", "save" not in toolbar_now(w) and "mode_redact" in toolbar_now(w)
+      and "save" in dialogs.hidden_toolbar_parts())
+dialogs.PreferencesDialog.exec = _exec
+for _k in ("toolbar/hidden", "toolbar/shown"):
+    dialogs.settings().remove(_k)
+w.apply_toolbar(); pump()
+check("(toolbar back to the usual for the rest of the run)", toolbar_now(w) == _tb_before)
 
 # a file reopens at the page and zoom it was left at
 _left = os.path.join(OUT, "left.pdf")
