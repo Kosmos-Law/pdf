@@ -6,14 +6,15 @@ import subprocess
 import sys
 
 import pymupdf as fitz
-from PySide6.QtCore import QEvent, QSettings, Qt, Signal
-from PySide6.QtGui import QPalette
+from PySide6.QtCore import QEvent, QSettings, QSize, Qt, QTimer, Signal
+from PySide6.QtGui import QIcon, QPalette, QPixmap
 from PySide6.QtWidgets import (QAbstractItemView, QCheckBox, QComboBox, QDialog, QDialogButtonBox,
-                               QDoubleSpinBox, QFileDialog, QFormLayout, QGridLayout, QGroupBox, QHBoxLayout,
+                               QDoubleSpinBox, QFileDialog, QFormLayout, QGroupBox, QHBoxLayout,
                                QLabel, QLineEdit, QListWidget, QListWidgetItem, QMessageBox, QPlainTextEdit,
                                QPushButton, QRadioButton, QSpinBox, QVBoxLayout, QWidget)
 
 from .core import PAGE_SIZES, is_image, load_any
+from .theme import lucide
 
 POSITIONS = ["Bottom right", "Bottom center", "Bottom left", "Top right", "Top center", "Top left"]
 
@@ -568,27 +569,76 @@ def opening_tool(s=None):
     return tool if tool in OPENING_TOOLS else "hand"
 
 
-# The toolbar buttons that can be left off, as Preferences lists them. Open, the page and
-# zoom boxes and the menu button always stay; a button left off is still in the menus,
-# with its shortcut.
-TOOLBAR_PARTS = {"thumbs": "Page panel", "save": "Save", "print": "Print", "ocr": "OCR", "undo": "Undo and Redo",
-                 "find": "Find", "rotate": "Rotate", "hand": "Move", "select": "Select", "highlight": "Highlight",
-                 "typewriter": "Typewriter", "label": "Exhibit Label"}
+# The toolbar is the user's to arrange, in Preferences: which items are on it, in what
+# order, and where the dividers go. An item is a button, or a few that belong together
+# (Undo and Redo; the zoom box with its two buttons). One left off is still in the menus,
+# with its shortcut. Open cannot be left off, and the menu button, at the right end, is
+# not an item at all, so there is always a way to a file and to everything else.
+DIVIDER = "|"
+TOOLBAR_ITEMS = {"thumbs": "Page panel", "open": "Open", "save": "Save", "print": "Print", "ocr": "OCR", "find": "Find",
+                 "undo": "Undo and Redo", "page": "Page number", "zoom": "Zoom", "fit": "Fit Width and Fit Page",
+                 "rotate": "Rotate", "pages": "Delete, Copy Out, Insert Pages", "hand": "Move", "select": "Select",
+                 "highlight": "Highlight", "typewriter": "Typewriter", "label": "Exhibit Label", "redact": "Redact",
+                 "bates": "Bates Numbering", "bates_files": "Bates Number Files", "label_files": "Label Exhibit Files",
+                 "combine": "Combine Files"}
+TOOLBAR_LOCKED = ("open",)
+# Everything, in the places the items have by default: the order of the "Available" list.
+TOOLBAR_ALL = ("thumbs | open save print ocr find | undo | page zoom fit | rotate pages | "
+               "hand select highlight typewriter label redact | bates bates_files label_files combine").split()
+# What a toolbar starts with: the rest are there to add, since it is full as it is.
+TOOLBAR_EXTRAS = ("fit", "pages", "redact", "bates", "bates_files", "label_files", "combine")
 
 
-# More buttons, for those who want them: not on the toolbar until ticked, since it is full as it is.
-TOOLBAR_EXTRAS = {"fit": "Fit Width and Fit Page", "pages": "Delete, Copy Out, Insert Pages", "redact": "Redact",
-                  "bates": "Bates Numbering", "bates_files": "Bates Number Files",
-                  "label_files": "Label Exhibit Files", "combine": "Combine Files"}
+def tidy_dividers(layout):
+    """The layout without a divider at either end, or two together."""
+    out = []
+    for key in layout:
+        if key != DIVIDER or (out and out[-1] != DIVIDER):
+            out.append(key)
+    return out[:-1] if out and out[-1] == DIVIDER else out
 
 
-def hidden_toolbar_parts(s=None):
-    """What is left off the toolbar: the usual buttons the user has unticked, and the extra
-    ones not ticked."""
+TOOLBAR_DEFAULT = tidy_dividers([k for k in TOOLBAR_ALL if k not in TOOLBAR_EXTRAS])
+
+
+def clean_layout(keys):
+    """A list of toolbar items made fit to use: no unknown items, none twice, no two
+    dividers together, and Open on it."""
+    out = []
+    for key in keys:
+        if (key != DIVIDER or out[-1:] != [DIVIDER]) if key == DIVIDER else (key in TOOLBAR_ITEMS and key not in out):
+            out.append(key)
+    return [k for k in TOOLBAR_LOCKED if k not in out] + out
+
+
+def toolbar_layout(s=None):
+    """The toolbar's items in order, with DIVIDER between groups."""
     s = s or settings()
+    saved = s.value("toolbar/layout")
+    if saved:
+        return clean_layout(str(saved).split(","))
+    # Before the toolbar could be rearranged, Preferences had a tick box for each item:
+    # the usual ones unticked were kept in toolbar/hidden, the extra ones ticked in toolbar/shown.
     hidden = str(s.value("toolbar/hidden", "") or "").split(",")
     shown = str(s.value("toolbar/shown", "") or "").split(",")
-    return {part for part in hidden if part in TOOLBAR_PARTS} | {part for part in TOOLBAR_EXTRAS if part not in shown}
+    off = {k for k in hidden if k not in TOOLBAR_LOCKED + ("page", "zoom")} | {k for k in TOOLBAR_EXTRAS if k not in shown}
+    return tidy_dividers([k for k in TOOLBAR_ALL if k not in off])
+
+
+class ToolbarList(QListWidget):
+    """One of the two lists in Preferences. Items can be dragged within it and to the other."""
+
+    def __init__(self):
+        super().__init__()
+        self.setDragDropMode(QAbstractItemView.DragDrop)
+        self.setDefaultDropAction(Qt.MoveAction)
+        self.setSelectionMode(QAbstractItemView.SingleSelection)
+        self.setIconSize(QSize(18, 18))
+        self.setMinimumHeight(250)
+        self.setMinimumWidth(215)
+
+    def keys(self):
+        return [self.item(i).data(Qt.UserRole) for i in range(self.count())]
 
 
 # Where each file was left (its zoom and page), so that it reopens there: a list of
@@ -635,15 +685,17 @@ def forget_views():
 
 
 class PreferencesDialog(QDialog):
-    # A toolbar box was ticked or unticked, and the setting changed with it: the windows
-    # redo their toolbars there and then, so the user sees what each box does. Cancel puts
-    # the toolbar back as it was.
+    # The toolbar was rearranged, and the setting changed with it: the windows redo their
+    # toolbars there and then, so the user sees what each change does. Cancel puts the
+    # toolbar back as it was.
     toolbar_changed = Signal()
+    TOOLBAR_KEYS = ("toolbar/layout", "toolbar/hidden", "toolbar/shown")
 
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, icons=None):
         super().__init__(parent)
         self.setWindowTitle("Preferences")
-        self._toolbar_was = {k: settings().value(k) for k in ("toolbar/hidden", "toolbar/shown")}
+        self.icons = icons or {}          # toolbar item -> QIcon, from the window
+        self._toolbar_was = {k: settings().value(k) for k in self.TOOLBAR_KEYS}
         self.zoom = QComboBox(editable=True)
         self.zoom.addItems(ZOOM_CHOICES)
         self.zoom.setInsertPolicy(QComboBox.NoInsert)
@@ -659,26 +711,6 @@ class PreferencesDialog(QDialog):
         self.remember.setToolTip("A file you have had open before comes back as you left it;\n"
                                  "the zoom above is for files opened for the first time.")
         self.zoom.editTextChanged.connect(self._update)
-        hidden = hidden_toolbar_parts()
-        self.toolbar_group = QGroupBox("Toolbar buttons")
-        grid = QGridLayout(self.toolbar_group)
-        self.toolbar_boxes = {}
-        row = 0
-        for parts, heading in ((TOOLBAR_PARTS, None), (TOOLBAR_EXTRAS, "More buttons:")):
-            if heading:
-                grid.addWidget(QLabel(heading), row, 0, 1, 3)
-                row += 1
-            rows = (len(parts) + 2) // 3
-            for n, (part, text) in enumerate(parts.items()):
-                box = self.toolbar_boxes[part] = QCheckBox(text)
-                box.setChecked(part not in hidden)
-                box.toggled.connect(self._toolbar_ticked)
-                grid.addWidget(box, row + n % rows, n // rows)
-            row += rows
-        self.toolbar_boxes["pages"].setToolTip("Delete Pages, Copy Pages to New PDF and Insert Pages from File")
-        note = QLabel("The toolbar changes as you tick. A button left off is still in the\nmenus, and its shortcut still works.")
-        note.setForegroundRole(QPalette.PlaceholderText)
-        grid.addWidget(note, row, 0, 1, 3)
         self.buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
         self.buttons.accepted.connect(self.accept)
         self.buttons.rejected.connect(self.reject)
@@ -689,14 +721,155 @@ class PreferencesDialog(QDialog):
         lay.addLayout(form)
         lay.addWidget(self.remember)
         lay.addWidget(QLabel("Files that are already open keep the zoom they have."))
-        lay.addWidget(self.toolbar_group)
+        lay.addWidget(self._toolbar_group())
         lay.addWidget(self.buttons)
 
-    def _toolbar_ticked(self):
-        boxes = self.toolbar_boxes
-        settings().setValue("toolbar/hidden", ",".join(p for p in TOOLBAR_PARTS if not boxes[p].isChecked()))
-        settings().setValue("toolbar/shown", ",".join(p for p in TOOLBAR_EXTRAS if boxes[p].isChecked()))
-        self.toolbar_changed.emit()
+    # --- the toolbar: what is on it, and in what order ------------------------------------
+    def _toolbar_group(self):
+        group = self.toolbar_group = QGroupBox("Toolbar")
+        self.available, self.chosen = ToolbarList(), ToolbarList()
+        self.available.setToolTip("What can be added to the toolbar. Double-click, or drag across.")
+        self.chosen.setToolTip("The toolbar, from left to right. Drag to rearrange; double-click to take off.")
+
+        def button(text, tip, slot):
+            b = QPushButton(text)
+            b.setToolTip(tip)
+            b.setAutoDefault(False)           # Enter is OK's, not whichever of these was last pressed
+            b.clicked.connect(slot)
+            return b
+
+        self.add_button = button("&Add  →", "Put the selected item on the toolbar", self.add_item)
+        self.remove_button = button("←  Re&move", "Take the selected item off the toolbar", self.remove_item)
+        self.up_button = button("Move &Up", "Move the selected item towards the left of the toolbar", lambda: self.move_item(-1))
+        self.down_button = button("Move &Down", "Move the selected item towards the right of the toolbar",
+                                  lambda: self.move_item(1))
+        ink = self.palette().color(QPalette.ButtonText)
+        for b, name in ((self.up_button, "chevron-up"), (self.down_button, "chevron-down")):
+            b.setIcon(lucide(name, ink))
+        self.reset_button = button("Reset to De&fault", "Put the toolbar back as it first was", self.reset_toolbar)
+        columns = QHBoxLayout()
+        for title, widget in (("Available", self.available), (None, (self.add_button, self.remove_button)),
+                              ("On the toolbar, left to right", self.chosen), (None, (self.up_button, self.down_button))):
+            col = QVBoxLayout()
+            if title:
+                col.addWidget(QLabel(title))
+                col.addWidget(widget)
+            else:
+                col.addStretch()
+                for b in widget:
+                    col.addWidget(b)
+                col.addStretch()
+            columns.addLayout(col, 1 if title else 0)
+        note = QLabel("The toolbar changes as you go. What is left off is still in the menus, and its\n"
+                      "shortcut still works. Open and the menu button always stay.")
+        note.setForegroundRole(QPalette.PlaceholderText)
+        foot = QHBoxLayout()
+        foot.addWidget(note, 1)
+        foot.addWidget(self.reset_button, 0, Qt.AlignBottom)
+        lay = QVBoxLayout(group)
+        lay.addLayout(columns)
+        lay.addLayout(foot)
+        self._layout = None
+        self._fill_lists(toolbar_layout())
+        self.available.itemDoubleClicked.connect(lambda _: self.add_item())
+        self.chosen.itemDoubleClicked.connect(lambda _: self.remove_item())
+        for lst in (self.available, self.chosen):
+            lst.itemSelectionChanged.connect(self._toolbar_buttons)
+            # A drag between or within the lists changes their rows; once Qt has finished
+            # with it, read the result off the right-hand list and put both lists in order.
+            for sig in (lst.model().rowsInserted, lst.model().rowsRemoved, lst.model().rowsMoved):
+                sig.connect(self._lists_changed)
+        self._sync_soon = QTimer(self, singleShot=True, interval=0, timeout=self._lists_dragged)
+        return group
+
+    def _list_item(self, key):
+        icon = self.icons.get(key)
+        if key != DIVIDER and (icon is None or icon.isNull()):
+            blank = QPixmap(18, 18)           # no icon of its own (the page number box): keep its name in line
+            blank.fill(Qt.transparent)
+            icon = QIcon(blank)
+        it = QListWidgetItem(icon or QIcon(), "—  Divider  —" if key == DIVIDER else TOOLBAR_ITEMS[key])
+        it.setData(Qt.UserRole, key)
+        if key == "pages":
+            it.setToolTip("Delete Pages, Copy Pages to New PDF and Insert Pages from File")
+        elif key in TOOLBAR_LOCKED:
+            it.setToolTip("Always on the toolbar; it can be moved")
+        return it
+
+    def _fill_lists(self, layout, select=None):
+        """Show this layout in the two lists, and (if it is a change) make it the toolbar.
+        `select` is the row of the right-hand list to leave selected."""
+        layout = clean_layout(layout)
+        self._filling = True
+        self.chosen.clear()
+        for key in layout:
+            self.chosen.addItem(self._list_item(key))
+        self.available.clear()
+        self.available.addItem(self._list_item(DIVIDER))       # always there: as many as are wanted
+        for key in TOOLBAR_ALL:
+            if key != DIVIDER and key not in layout:
+                self.available.addItem(self._list_item(key))
+        if select is not None and self.chosen.count():
+            self.chosen.setCurrentRow(max(0, min(select, self.chosen.count() - 1)))
+        self._filling = False
+        self._toolbar_buttons()
+        if self._layout is not None and layout != self._layout:
+            settings().setValue("toolbar/layout", ",".join(layout))
+            self.toolbar_changed.emit()
+        self._layout = layout
+
+    def toolbar_keys(self):
+        return list(self._layout)
+
+    def _lists_changed(self, *_):
+        if not self._filling:
+            self._sync_soon.start()
+
+    def _lists_dragged(self):
+        keys = self.chosen.keys()
+        row = self.chosen.currentRow()
+        for key in TOOLBAR_LOCKED:            # dragged off: it goes back where it was
+            if key not in keys:
+                keys.insert(min(self._layout.index(key), len(keys)), key)
+        self._fill_lists(keys, select=row if self.chosen.hasFocus() else None)
+
+    def _toolbar_buttons(self):
+        row, n = self.chosen.currentRow(), self.chosen.count()
+        on = self.chosen.currentItem() if self.chosen.selectedItems() else None
+        self.add_button.setEnabled(bool(self.available.selectedItems()))
+        self.remove_button.setEnabled(bool(on) and on.data(Qt.UserRole) not in TOOLBAR_LOCKED)
+        self.up_button.setEnabled(bool(on) and row > 0)
+        self.down_button.setEnabled(bool(on) and row < n - 1)
+        self.reset_button.setEnabled(self.chosen.keys() != TOOLBAR_DEFAULT)
+
+    def add_item(self):
+        """Put the item selected on the left onto the toolbar: after the one selected there, or at the end."""
+        it = self.available.currentItem() if self.available.selectedItems() else None
+        if not it:
+            return
+        keys = self.chosen.keys()
+        at = self.chosen.currentRow() + 1 if self.chosen.selectedItems() else len(keys)
+        keys.insert(at, it.data(Qt.UserRole))
+        self._fill_lists(keys, select=at)
+
+    def remove_item(self):
+        it = self.chosen.currentItem() if self.chosen.selectedItems() else None
+        if not it or it.data(Qt.UserRole) in TOOLBAR_LOCKED:
+            return
+        keys, row = self.chosen.keys(), self.chosen.currentRow()
+        del keys[row]
+        self._fill_lists(keys, select=row)
+
+    def move_item(self, step):
+        keys, row = self.chosen.keys(), self.chosen.currentRow()
+        to = row + step
+        if not self.chosen.selectedItems() or not 0 <= to < len(keys):
+            return
+        keys.insert(to, keys.pop(row))
+        self._fill_lists(keys, select=to)
+
+    def reset_toolbar(self):
+        self._fill_lists(TOOLBAR_DEFAULT)
 
     def reject(self):
         s = settings()

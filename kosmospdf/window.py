@@ -9,7 +9,7 @@ from PySide6.QtCore import (QByteArray, QEvent, QMimeData, QPoint, QProcess, QPr
                             QUrl, qVersion)
 from PySide6.QtGui import (QAction, QActionGroup, QCursor, QDesktopServices, QDrag, QGuiApplication, QIcon,
                            QIntValidator, QPalette, QKeySequence, QMouseEvent)
-from PySide6.QtWidgets import (QHBoxLayout, QApplication, QComboBox, QDoubleSpinBox, QFileDialog,
+from PySide6.QtWidgets import (QApplication, QComboBox, QDoubleSpinBox, QFileDialog, QHBoxLayout, QWidgetAction,
                                QInputDialog, QLabel, QLineEdit, QMainWindow, QMenu, QMessageBox,
                                QProgressDialog, QSizePolicy, QSplitter, QStyle, QTabBar, QTabWidget,
                                QToolBar, QToolButton, QVBoxLayout, QWidget)
@@ -62,13 +62,14 @@ LUCIDE = {
 }
 
 
-# What each entry of Preferences' toolbar checklist (dialogs.TOOLBAR_PARTS, and then
-# TOOLBAR_EXTRAS) puts on the toolbar: actions by name, and "font_size" for the typewriter's size box.
-TOOLBAR_MEMBERS = {"thumbs": ["thumbs"], "save": ["save"], "print": ["print"], "ocr": ["ocr"], "undo": ["undo", "redo"],
-                   "find": ["find_bar"], "rotate": ["rotate_left", "rotate_right"], "hand": ["mode_hand"],
-                   "select": ["mode_select"], "highlight": ["mode_highlight"],
+# What each item of the toolbar (dialogs.TOOLBAR_ITEMS, arranged in Preferences) puts on
+# it: actions by name, or one of the widgets kept in MainWindow._toolbar_widgets.
+TOOLBAR_MEMBERS = {"thumbs": ["thumbs"], "open": ["open"], "save": ["save"], "print": ["print"], "ocr": ["ocr"],
+                   "find": ["find_bar"], "undo": ["undo", "redo"], "page": ["page_box", "page_total"],
+                   "zoom": ["zoom_out", "zoom_box", "zoom_in"], "fit": ["fit_width", "fit_page"],
+                   "rotate": ["rotate_left", "rotate_right"], "pages": ["delete_pages", "extract", "insert_file"],
+                   "hand": ["mode_hand"], "select": ["mode_select"], "highlight": ["highlight_button"],
                    "typewriter": ["mode_typewriter", "font_size"], "label": ["mode_label"],
-                   "fit": ["fit_width", "fit_page"], "pages": ["delete_pages", "extract", "insert_file"],
                    "redact": ["mode_redact"], "bates": ["bates"], "bates_files": ["bates_files"],
                    "label_files": ["label_files"], "combine": ["combine"]}
 
@@ -754,40 +755,16 @@ class MainWindow(QMainWindow):
         tb.setMovable(False)
         tb.setIconSize(QSize(theme.TOOLBAR_ICON, theme.TOOLBAR_ICON))
         self.addToolBar(tb)
-        tb.addAction(a["thumbs"])
-        tb.addSeparator()
-        # Find comes here, beside OCR (which is what makes a scan findable), and not by the zoom
-        # buttons: its magnifier looks too like theirs, and this far left a narrow window keeps it.
-        for n in ("open", "save", "print", "ocr", "find_bar"):
-            tb.addAction(a[n])
+        tb.setToolButtonStyle(Qt.ToolButtonIconOnly)
         # Open is a split button: the button opens a file, and its arrow lists the recent ones.
-        self.open_button = tb.widgetForAction(a["open"])
-        self.open_recent_menu = QMenu(self.open_button)
+        self.open_recent_menu = QMenu(self)
         self.open_recent_menu.aboutToShow.connect(lambda: self.fill_recent_menu(self.open_recent_menu))
-        self.open_button.setMenu(self.open_recent_menu)
-        self.open_button.setPopupMode(QToolButton.MenuButtonPopup)
-        tb.addSeparator()
-        for n in ("undo", "redo"):
-            tb.addAction(a[n])
-        tb.addSeparator()
-        tb.addWidget(self.page_box)
-        tb.addWidget(self.page_total)
-        tb.addAction(a["zoom_out"])
-        tb.addWidget(self.zoom_box)
-        tb.addAction(a["zoom_in"])
-        for n in ("fit_width", "fit_page"):                   # only if ticked in Preferences, as with the
-            tb.addAction(a[n])                                # page commands and the last group below
-        tb.addSeparator()
-        for n in ("rotate_left", "rotate_right", "delete_pages", "extract", "insert_file"):
-            tb.addAction(a[n])
-        tb.addSeparator()
-        tb.addAction(a["mode_hand"])
-        tb.addAction(a["mode_select"])
         # Highlight is a split button, as in a word processor: the button highlights, and
         # its arrow chooses the colour, which shows as a stripe under the highlighter.
         colors = QToolButton()
         colors.setDefaultAction(a["mode_highlight"])
         colors.setPopupMode(QToolButton.MenuButtonPopup)
+        colors.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
         cm = QMenu(colors)
         for name, rgb in HIGHLIGHT_COLORS.items():
             cm.addAction(swatch(rgb), name, lambda rgb=rgb: self.set_hl_color(rgb))
@@ -795,17 +772,14 @@ class MainWindow(QMainWindow):
         self.clear_action = cm.addAction("Clear (remove highlights)", lambda: self.set_hl_color(None))
         colors.setMenu(cm)
         self.color_button = colors
-        # The toolbar's own actions for the widgets put on it, which show and hide them.
-        self._toolbar_widgets = {"mode_highlight": tb.addWidget(colors)}
-        tb.addAction(a["mode_typewriter"])
-        self._toolbar_widgets["font_size"] = tb.addWidget(self.font_size)
-        tb.addAction(a["mode_label"])
-        tb.addAction(a["mode_redact"])
-        tb.addSeparator()
-        for n in ("bates", "bates_files", "label_files", "combine"):
-            tb.addAction(a[n])
-        tb.setToolButtonStyle(Qt.ToolButtonIconOnly)
-        self._toolbar_order = tb.actions()    # everything, in order: apply_toolbar puts back what it took off
+        # The widgets that go on the toolbar, each in an action of the window's own. (Those
+        # the toolbar makes itself, with addWidget, it deletes, widget and all, when they are
+        # taken off; these can come off and go back on as the toolbar is rearranged.)
+        self._toolbar_widgets = {}
+        for name, widget in (("page_box", self.page_box), ("page_total", self.page_total), ("zoom_box", self.zoom_box),
+                             ("highlight_button", colors), ("font_size", self.font_size)):
+            wa = self._toolbar_widgets[name] = QWidgetAction(self)
+            wa.setDefaultWidget(widget)
         self.apply_toolbar()
         self.build_redact_bar()
         self.set_redact_by("text")
@@ -845,40 +819,39 @@ class MainWindow(QMainWindow):
         self.addToolBar(self.findbar)
 
     def apply_toolbar(self):
-        """Leave off the toolbar the buttons unticked in Preferences, and put back any ticked
-        again, each where it belongs. An action's button is taken off the toolbar, not hidden:
-        hiding the action would take it out of the menus and stop its shortcut."""
+        """Lay the toolbar out as arranged in Preferences (dialogs.toolbar_layout): which
+        items, in what order, with dividers. What is not on it is still in the menus, with
+        its shortcut: an action is left off the toolbar, never hidden."""
         a, tb = self.actions_by_name, self.toolbar
-        off = {self._toolbar_widgets.get(n) or a[n]
-               for part in dialogs.hidden_toolbar_parts() for n in TOOLBAR_MEMBERS[part]}
-        widgets = set(self._toolbar_widgets.values())
-        for i, act in enumerate(self._toolbar_order):
-            if act.isSeparator():
-                continue
-            if act in widgets:
-                act.setVisible(act not in off)
-            elif act in off:
-                tb.removeAction(act)
-            elif act not in tb.actions():
-                before = next((x for x in self._toolbar_order[i + 1:] if x in tb.actions()), None)
-                tb.insertAction(before, act) if before else tb.addAction(act)
-        # A divider only between two groups that each have something showing.
-        group, last = False, None         # something is showing since the last divider; the last divider shown
+        tb.setUpdatesEnabled(False)
         for act in tb.actions():
+            tb.removeAction(act)
             if act.isSeparator():
-                act.setVisible(group)
-                last, group = (act if group else last), False
-            elif act.isVisible():
-                group = True
-        if last and not group:
-            last.setVisible(False)        # nothing after it
+                act.deleteLater()
+        for key in dialogs.tidy_dividers(dialogs.toolbar_layout()):
+            if key == dialogs.DIVIDER:
+                tb.addSeparator()
+                continue
+            for n in TOOLBAR_MEMBERS[key]:
+                tb.addAction(self._toolbar_widgets.get(n) or a[n])
         # Common commands are icons with tooltips; most tools keep a label so they are easy to find (Move, a hand, needs none).
-        labelled = {a[n] for n in ("mode_select", "mode_highlight", "mode_typewriter", "mode_label", "ocr",
+        labelled = {a[n] for n in ("mode_select", "mode_typewriter", "mode_label", "ocr",
                                    "mode_redact", "bates", "bates_files", "label_files")}
-        for b in tb.findChildren(QToolButton):
-            if b.defaultAction() in labelled:
-                b.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
+        for act in tb.actions():
+            if act in labelled:
+                tb.widgetForAction(act).setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
+        self.open_button = tb.widgetForAction(a["open"])
+        self.open_button.setMenu(self.open_recent_menu)
+        self.open_button.setPopupMode(QToolButton.MenuButtonPopup)
         self.ocr_button = tb.widgetForAction(a["ocr"])       # None while OCR is left off
+        tb.setUpdatesEnabled(True)
+
+    def toolbar_icons(self):
+        """An icon for each toolbar item, for the lists in Preferences."""
+        a = self.actions_by_name
+        first = {"page": None, "zoom": "zoom_in", "highlight": "mode_highlight"}
+        return {key: a[first.get(key, names[0])].icon() if first.get(key, names[0]) else QIcon()
+                for key, names in TOOLBAR_MEMBERS.items()}
 
     def set_clean_view(self, on):
         """Clean View: nothing but the tabs and the document, for showing an exhibit on a
@@ -1790,8 +1763,8 @@ class MainWindow(QMainWindow):
             self.statusBar().showMessage("The redacted copy is open in its own tab, not yet saved.", 10000)
 
     def preferences(self):
-        dlg = dialogs.PreferencesDialog(self)
-        dlg.toolbar_changed.connect(lambda: [w.apply_toolbar() for w in WINDOWS])     # as each box is ticked
+        dlg = dialogs.PreferencesDialog(self, self.toolbar_icons())
+        dlg.toolbar_changed.connect(lambda: [w.apply_toolbar() for w in WINDOWS])     # as it is rearranged
         dlg.exec()
 
     def about(self):

@@ -1824,118 +1824,140 @@ check("Shift-click selects the run, and Ctrl-click adds to that",
       panel_click(3, Qt.ShiftModifier) == [1, 2, 3] and panel_click(5, Qt.ControlModifier) == [1, 2, 3, 5])
 panel_click(0)
 
-# the toolbar checklist: buttons left off, and put back where they were
+# the toolbar manager: what is on the toolbar, and in what order
 def toolbar_now(win):
     """What shows on the toolbar, in order: action names, "|" for a divider, "?" for a widget."""
     names = {a_: n for n, a_ in win.actions_by_name.items()}
     return [("|" if x.isSeparator() else names.get(x, "?")) for x in win.toolbar.actions() if x.isVisible()]
 
 
+def prefs_do(steps, ok=True):
+    """Open Preferences from the menu, as the user does, do these steps in it, and press OK or Cancel."""
+    def run(self):
+        steps(self)
+        pump()
+        self.accept() if ok else self.reject()
+        return int(ok)
+    _exec = dialogs.PreferencesDialog.exec
+    dialogs.PreferencesDialog.exec = run
+    try:
+        w.actions_by_name["preferences"].trigger(); pump()
+    finally:
+        dialogs.PreferencesDialog.exec = _exec
+
+
+def pick(lst, key):
+    lst.setCurrentRow(lst.keys().index(key)); pump()
+
+
 _tb_before = toolbar_now(w)
-_w2 = window.MainWindow(); _w2.show(); pump()
-prefs = dialogs.PreferencesDialog(w)
-check("the usual buttons start ticked, and the extra ones not",
-      all(prefs.toolbar_boxes[p_].isChecked() for p_ in dialogs.TOOLBAR_PARTS)
-      and not any(prefs.toolbar_boxes[p_].isChecked() for p_ in dialogs.TOOLBAR_EXTRAS)
-      and list(prefs.toolbar_boxes) == list(dialogs.TOOLBAR_PARTS) + list(dialogs.TOOLBAR_EXTRAS) == list(window.TOOLBAR_MEMBERS))
+_usual = ["thumbs", "|", "open", "save", "print", "ocr", "find_bar", "|", "undo", "redo", "|", "?", "?", "zoom_out", "?",
+          "zoom_in", "|", "rotate_left", "rotate_right", "|", "mode_hand", "mode_select", "?", "mode_typewriter", "?",
+          "mode_label"]
+check("the toolbar starts as it always was", _tb_before == _usual and w.page_box.isVisible() and w.zoom_box.isVisible()
+      and w.color_button.isVisible() and w.font_size.isVisible(), str(_tb_before))
+check("every item has its buttons, and the lists know every item",
+      set(dialogs.TOOLBAR_ITEMS) == set(window.TOOLBAR_MEMBERS) == set(dialogs.TOOLBAR_ALL) - {"|"}
+      and set(dialogs.TOOLBAR_EXTRAS) < set(dialogs.TOOLBAR_ITEMS))
+prefs = dialogs.PreferencesDialog(w, w.toolbar_icons())
+check("Preferences shows the toolbar in one list, in order with its dividers, and what can be added in the other",
+      prefs.chosen.keys() == dialogs.TOOLBAR_DEFAULT and prefs.available.keys() == ["|"] + list(dialogs.TOOLBAR_EXTRAS)
+      and prefs.chosen.item(0).text() == "Page panel" and not prefs.chosen.item(0).icon().isNull()
+      and not prefs.reset_button.isEnabled() and not prefs.up_button.isEnabled() and not prefs.add_button.isEnabled(),
+      f"{prefs.chosen.keys()} {prefs.available.keys()}")
+check("Move Up and Move Down carry an up and a down chevron",
+      not prefs.up_button.icon().isNull() and not prefs.down_button.icon().isNull()
+      and prefs.up_button.icon().pixmap(16).toImage() != prefs.down_button.icon().pixmap(16).toImage())
 prefs.reject()
-_exec = dialogs.PreferencesDialog.exec
+_seen = {}
+_w2 = window.MainWindow(); _w2.show(); pump()
 
 
-def untick_some(self):
-    for part in ("print", "ocr", "undo", "rotate", "typewriter"):
-        self.toolbar_boxes[part].setChecked(False)
-    self.accept()
-    return 1
+def rearrange(d):
+    pick(d.chosen, "print"); d.remove_item()
+    pick(d.chosen, "undo"); d.remove_button.click()
+    pump(); _seen["live"] = toolbar_now(w)
+    pick(d.chosen, "find"); d.move_item(-1); d.up_button.click()        # Find to before Save
+    pick(d.chosen, "zoom"); pick(d.available, "fit"); d.add_item()      # the fits after the zoom
+    pick(d.available, "redact"); d.chosen.clearSelection(); d.add_button.click()    # nothing selected: at the end
+    pick(d.available, "|"); pick(d.chosen, "label"); d.add_item()       # a divider between Label and Redact
+    _seen["divider stays"] = d.available.keys()[0] == "|"
+    _seen["keys"] = d.toolbar_keys()
 
 
-dialogs.PreferencesDialog.exec = untick_some
-w.actions_by_name["preferences"].trigger(); pump()
-dialogs.PreferencesDialog.exec = _exec
+prefs_do(rearrange)
 _now = toolbar_now(w)
-check("unticked buttons leave the toolbar, in every window, and no divider is left doubled or dangling",
-      _now == ["thumbs", "|", "open", "save", "find_bar", "|", "?", "?", "zoom_out", "?", "zoom_in", "|",
-               "mode_hand", "mode_select", "?", "mode_label"] and toolbar_now(_w2) == _now and not w.font_size.isVisible(),
-      str(_now))
+_want = ["thumbs", "|", "open", "find_bar", "save", "ocr", "|", "?", "?", "zoom_out", "?", "zoom_in", "fit_width", "fit_page",
+         "|", "rotate_left", "rotate_right", "|", "mode_hand", "mode_select", "?", "mode_typewriter", "?", "mode_label", "|",
+         "mode_redact"]
+check("items can be taken off, added and moved, and the toolbar follows, with no divider doubled where a group went",
+      _now == _want and _seen["divider stays"], str(_now))
+check("the toolbar changes as it is done, before OK, and in every window",
+      "print" not in _seen["live"] and "undo" not in _seen["live"] and toolbar_now(_w2) == _now, str(_seen["live"]))
+check("the widgets come through being moved: page box, zoom box, highlight colours and font size",
+      all(x.isVisible() for x in (w.page_box, w.page_total, w.zoom_box, w.color_button, w.font_size))
+      and w.color_button.menu() is not None and w.open_button.menu() is w.open_recent_menu
+      and w.open_button.popupMode() == QToolButton.MenuButtonPopup)
 _file = next(m_.menu() for m_ in w.main_menu.actions() if m_.text() == "&File")
-check("they stay in the menus, with their shortcuts", w.actions_by_name["print"] in _file.actions()
-      and all(w.actions_by_name[n].isVisible() and w.actions_by_name[n] in w.actions()
-              for n in ("print", "ocr", "undo", "redo", "rotate_left", "mode_typewriter")))
-_w3 = window.MainWindow(); _w3.show(); pump()
-check("a window opened afterwards has the same toolbar", toolbar_now(_w3) == _now)
-_w2.close(); _w3.close(); pump()
-prefs = dialogs.PreferencesDialog(w)
-check("the dialog shows what is left off", [p_ for p_ in dialogs.TOOLBAR_PARTS if not prefs.toolbar_boxes[p_].isChecked()]
-      == ["print", "ocr", "undo", "rotate", "typewriter"])
-for p_ in dialogs.TOOLBAR_PARTS:
-    prefs.toolbar_boxes[p_].setChecked(True)
-prefs.accept(); w.apply_toolbar(); pump()
-check("ticked again, they come back where they were, OCR and Typewriter with their labels",
-      toolbar_now(w) == _tb_before and w.font_size.isVisible()
-      and w.ocr_button.toolButtonStyle() == Qt.ToolButtonTextBesideIcon
-      and w.toolbar.widgetForAction(w.actions_by_name["mode_typewriter"]).toolButtonStyle() == Qt.ToolButtonTextBesideIcon
-      and w.toolbar.widgetForAction(w.actions_by_name["print"]).toolButtonStyle() == Qt.ToolButtonIconOnly,
-      str(toolbar_now(w)))
-prefs = dialogs.PreferencesDialog(w)
-for b in prefs.toolbar_boxes.values():
-    b.setChecked(False)
-prefs.accept(); w.apply_toolbar(); pump()
-check("with everything unticked, Open, the page and zoom boxes and the menu button remain",
-      toolbar_now(w) == ["open", "|", "?", "?", "zoom_out", "?", "zoom_in"] and w.menu_button.isVisible(), str(toolbar_now(w)))
-dialogs.settings().remove("toolbar/hidden"); w.apply_toolbar(); pump()
-check("and all of it comes back", toolbar_now(w) == _tb_before)
-prefs = dialogs.PreferencesDialog(w)
-for p_ in dialogs.TOOLBAR_EXTRAS:
-    prefs.toolbar_boxes[p_].setChecked(True)
-prefs.accept(); w.apply_toolbar(); pump()
-_now = toolbar_now(w)
-_btn = {n: w.toolbar.widgetForAction(w.actions_by_name[n]) for n in ("mode_redact", "bates", "bates_files", "label_files",
-                                                                     "combine", "fit_page", "delete_pages")}
-check("the extra buttons, ticked, each go where they belong: fits by the zoom, page commands by Rotate, "
-      "Redact with the tools, and the batch commands in a group at the end",
-      _now == ["thumbs", "|", "open", "save", "print", "ocr", "find_bar", "|", "undo", "redo", "|", "?", "?", "zoom_out", "?", "zoom_in",
-               "fit_width", "fit_page", "|", "rotate_left", "rotate_right", "delete_pages", "extract",
-               "insert_file", "|", "mode_hand", "mode_select", "?", "mode_typewriter", "?", "mode_label", "mode_redact",
-               "|", "bates", "bates_files", "label_files", "combine"], str(_now))
-check("those that would be hard to tell apart carry a word, and all have an icon",
-      [_btn[n].text() for n in ("mode_redact", "bates", "bates_files", "label_files")]
-      == ["Redact", "Bates", "Bates Files", "Label Files"]
-      and all(_btn[n].toolButtonStyle() == Qt.ToolButtonTextBesideIcon for n in ("mode_redact", "bates", "bates_files", "label_files"))
-      and _btn["combine"].toolButtonStyle() == Qt.ToolButtonIconOnly and not any(b.icon().isNull() for b in _btn.values()))
+check("what is taken off stays in the menus, with its shortcut", w.actions_by_name["print"] in _file.actions()
+      and all(w.actions_by_name[n].isVisible() and w.actions_by_name[n] in w.actions() for n in ("print", "undo", "redo")))
+_btn = {n: w.toolbar.widgetForAction(w.actions_by_name[n]) for n in ("mode_redact", "ocr", "mode_typewriter", "fit_page", "save")}
+check("buttons keep their looks wherever they are: a word beside OCR, Typewriter and Redact, an icon alone for the rest",
+      [_btn[n].toolButtonStyle() == Qt.ToolButtonTextBesideIcon for n in _btn] == [True, True, True, False, False]
+      and w.color_button.toolButtonStyle() == Qt.ToolButtonTextBesideIcon and w.ocr_button is _btn["ocr"]
+      and not any(b.icon().isNull() for b in _btn.values()))
 _btn["mode_redact"].click(); pump()
 check("the Redact button switches to redacting, and shows pressed", w.mode == "redact" and w.redact_bar.isVisible()
       and _btn["mode_redact"].isChecked())
 w.set_mode("select")
-check("the menus keep their full names", w.actions_by_name["bates_files"].text() == "Bates Number &Files…")
-dialogs.settings().remove("toolbar/shown"); w.apply_toolbar(); pump()
-check("unticked again, the toolbar is as it began", toolbar_now(w) == _tb_before)
-# the toolbar follows the boxes while the dialog is open; Cancel puts it back
-_seen = {}
+_w3 = window.MainWindow(); _w3.show(); pump()
+check("a window opened afterwards has the same toolbar", toolbar_now(_w3) == _now)
+_w2.close(); _w3.close(); pump()
+prefs = dialogs.PreferencesDialog(w, w.toolbar_icons())
+check("the dialog opens on the toolbar as arranged, with the rest in their usual order on the left",
+      prefs.toolbar_keys() == _seen["keys"] and prefs.available.keys() == ["|", "print", "undo", "pages", "bates",
+                                                                              "bates_files", "label_files", "combine"]
+      and prefs.reset_button.isEnabled(), str(prefs.available.keys()))
+pick(prefs.chosen, "open")
+check("Open can be moved but not taken off", not prefs.remove_button.isEnabled() and prefs.down_button.isEnabled())
+prefs.remove_item()
+_kept = "open" in prefs.toolbar_keys()
+# a drag, as Qt leaves the lists after one: Open dropped on the left, Print dropped in at the top on the right
+prefs.available.addItem(prefs.chosen.takeItem(prefs.chosen.keys().index("open")))
+prefs.chosen.insertItem(0, prefs.available.takeItem(prefs.available.keys().index("print")))
+pump()
+check("dragging between the lists works the same: Print goes on where dropped, and Open, dragged off, goes back",
+      _kept and prefs.toolbar_keys()[:4] == ["print", "thumbs", "open", "|"] and "open" not in prefs.available.keys()
+      and "print" not in prefs.available.keys(),
+      str(prefs.toolbar_keys()))
+check("two dividers are never left together in the list", "|,|" not in ",".join(prefs.toolbar_keys()))
+prefs.reject(); pump()
+prefs_do(lambda d: (pick(d.chosen, "save"), d.remove_item(), pump(), _seen.update(cancel=toolbar_now(w))), ok=False)
+check("Cancel puts the toolbar back as it was when the dialog opened", "save" not in _seen["cancel"] and toolbar_now(w) == _now)
 
 
-def tick_about(self):
-    self.toolbar_boxes["print"].setChecked(False); self.toolbar_boxes["redact"].setChecked(True); pump()
-    _seen["live"] = toolbar_now(w)
-    self.toolbar_boxes["print"].setChecked(True); pump()
-    _seen["back"] = toolbar_now(w)
-    self.toolbar_boxes["save"].setChecked(False); pump()
-    self.reject() if _seen.get("cancel") else self.accept()
-    return 0
+def strip(d):
+    for key in [k for k in d.toolbar_keys() if k != "open"]:
+        pick(d.chosen, key); d.remove_item()
 
 
-dialogs.PreferencesDialog.exec = tick_about
-_seen["cancel"] = True
-w.actions_by_name["preferences"].trigger(); pump()
-check("ticking a box changes the toolbar there and then, before OK",
-      "print" not in _seen["live"] and "mode_redact" in _seen["live"] and "print" in _seen["back"], str(_seen["live"]))
-check("Cancel puts the toolbar back as it was, and the settings with it", toolbar_now(w) == _tb_before
-      and dialogs.hidden_toolbar_parts() == set(dialogs.TOOLBAR_EXTRAS))
-_seen["cancel"] = False
-w.actions_by_name["preferences"].trigger(); pump()
-check("OK keeps it", "save" not in toolbar_now(w) and "mode_redact" in toolbar_now(w)
-      and "save" in dialogs.hidden_toolbar_parts())
-dialogs.PreferencesDialog.exec = _exec
-for _k in ("toolbar/hidden", "toolbar/shown"):
+prefs_do(strip)
+check("with everything taken off, Open and the menu button remain", toolbar_now(w) == ["open"] and w.menu_button.isVisible()
+      and not w.page_box.isVisible() and not w.font_size.isVisible(), str(toolbar_now(w)))
+prefs_do(lambda d: d.reset_button.click())
+check("Reset to Default puts the toolbar back as it first was", toolbar_now(w) == _tb_before
+      and dialogs.toolbar_layout() == dialogs.TOOLBAR_DEFAULT)
+# choices made with the tick boxes this replaced are carried over
+dialogs.settings().remove("toolbar/layout")
+dialogs.settings().setValue("toolbar/hidden", "print,undo,rotate"); dialogs.settings().setValue("toolbar/shown", "redact,bates")
+w.apply_toolbar(); pump()
+check("a toolbar set up with the earlier tick boxes comes across as it was",
+      toolbar_now(w) == ["thumbs", "|", "open", "save", "ocr", "find_bar", "|", "?", "?", "zoom_out", "?", "zoom_in", "|",
+                         "mode_hand", "mode_select", "?", "mode_typewriter", "?", "mode_label", "mode_redact", "|", "bates"],
+      str(toolbar_now(w)))
+dialogs.settings().setValue("toolbar/layout", "nonsense,save,save,|,zoom")
+check("a damaged setting still gives a toolbar, with Open on it", dialogs.toolbar_layout() == ["open", "save", "|", "zoom"])
+for _k in dialogs.PreferencesDialog.TOOLBAR_KEYS:
     dialogs.settings().remove(_k)
 w.apply_toolbar(); pump()
 check("(toolbar back to the usual for the rest of the run)", toolbar_now(w) == _tb_before)
