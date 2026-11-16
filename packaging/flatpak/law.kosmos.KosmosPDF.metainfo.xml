@@ -39,6 +39,21 @@
     <color type="primary" scheme_preference="dark">#2e3440</color>
   </branding>
   <releases>
+    <release version="0.5.0" date="2026-11-16">
+      <description>
+        <p>Preferences (in the Edit menu), a Clean View for sharing your screen, and a toolbar you can arrange.</p>
+        <ul>
+          <li>Arrange the toolbar under Edit, Preferences: one list shows what is on it, in order, and the other what can be added. New buttons to add are Fit Width and Fit Page, Delete, Copy Out and Insert Pages, Redact, Bates Numbering, Bates Number Files, Label Exhibit Files and Combine Files. The toolbar changes as you go, and Reset to Default puts it back. What is left off stays in the menus, with its shortcut.</li>
+          <li>Clean View (F8, or the View menu) hides the toolbar, page panel and status bar, leaving the tabs and the document, for showing an exhibit on a shared screen. The tab bar keeps the page panel's button and Open at its left end, and an arrow at its right end brings everything back.</li>
+          <li>A file you have had open before reopens at the page and zoom you left it at. Preferences sets the zoom for files opened for the first time, and the tool a file opens with (Move or Select), and can turn the remembering off.</li>
+          <li>Zooming keeps its place: Zoom In and Out hold what is in the middle of the window, and Ctrl+wheel zooms about the mouse, where before the page slid up and to the left.</li>
+          <li>In the page panel, Ctrl-click selects pages that are apart, or takes one out of the selection; Shift-click selects a run.</li>
+          <li>A window opens at the size the last one was closed at, and maximized if that one was.</li>
+          <li>The typewriter's size and the highlighter's colour start as they were last used.</li>
+          <li>Find has moved beside OCR, away from the zoom buttons its magnifier resembled.</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.4.2" date="2026-11-13">
       <description>
         <p>Exhibits can now be labelled from the command line, with no window, so that a script or an AI assistant can do it: "kosmospdf label" lists the saved presets, shows the labels files carry, and labels or renumbers a set of files as Label Exhibit Files does. The README has the details.</p>
