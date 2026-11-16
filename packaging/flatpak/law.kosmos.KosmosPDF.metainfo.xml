@@ -39,12 +39,12 @@
     <color type="primary" scheme_preference="dark">#2e3440</color>
   </branding>
   <releases>
-    <release version="0.5.0" date="2026-11-16">
+    <release version="0.5.1" date="2026-11-16">
       <description>
         <p>Preferences (in the Edit menu), a Clean View for sharing your screen, and a toolbar you can arrange.</p>
         <ul>
           <li>Arrange the toolbar under Edit, Preferences: one list shows what is on it, in order, and the other what can be added. New buttons to add are Fit Width and Fit Page, Delete, Copy Out and Insert Pages, Redact, Bates Numbering, Bates Number Files, Label Exhibit Files and Combine Files. The toolbar changes as you go, and Reset to Default puts it back. What is left off stays in the menus, with its shortcut.</li>
-          <li>Clean View (F8, or the View menu) hides the toolbar, page panel and status bar, leaving the tabs and the document, for showing an exhibit on a shared screen. The tab bar keeps the page panel's button and Open at its left end, and an arrow at its right end brings everything back.</li>
+          <li>Clean View (F8, the View menu, or its button at the right end of the toolbar, beside the menu button) hides the toolbar, page panel and status bar, leaving the tabs and the document, for showing an exhibit on a shared screen. The tab bar keeps the page panel's button and Open at its left end, and the Clean View and menu buttons at its right; the Clean View button there brings everything back.</li>
           <li>A file you have had open before reopens at the page and zoom you left it at. Preferences sets the zoom for files opened for the first time, and the tool a file opens with (Move or Select), and can turn the remembering off.</li>
           <li>Zooming keeps its place: Zoom In and Out hold what is in the middle of the window, and Ctrl+wheel zooms about the mouse, where before the page slid up and to the left.</li>
           <li>In the page panel, Ctrl-click selects pages that are apart, or takes one out of the selection; Shift-click selects a run.</li>
