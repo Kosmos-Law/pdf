@@ -54,7 +54,7 @@ LUCIDE = {
     "rotate_left": "rotate-ccw", "rotate_right": "rotate-cw", "rotate_180": "refresh-ccw",
     "extract": "file-output", "insert_blank": "file-plus", "insert_file": "file-input",
     "zoom_in": "zoom-in", "zoom_out": "zoom-out", "fit_width": "move-horizontal", "fit_page": "maximize",
-    "thumbs": "panel-left", "bates": "hash", "bates_files": "files", "ocr": "scan-text", "pdfa": "file-check", "flatten": "layers",
+    "thumbs": "panel-left", "clean": "presentation", "bates": "hash", "bates_files": "files", "ocr": "scan-text", "pdfa": "file-check", "flatten": "layers",
     "redact_search": "text-search", "apply_redactions": "check-check", "redact_done": "x", "about": "info",
     "redact_text": "text-select", "redact_area": "square-dashed",
     "mode_select": "text-cursor", "mode_highlight": "highlighter", "mode_typewriter": "type", "mode_redact": "eye-off",
@@ -64,7 +64,7 @@ LUCIDE = {
 
 # What each item of the toolbar (dialogs.TOOLBAR_ITEMS, arranged in Preferences) puts on
 # it: actions by name, or one of the widgets kept in MainWindow._toolbar_widgets.
-TOOLBAR_MEMBERS = {"thumbs": ["thumbs"], "open": ["open"], "save": ["save"], "print": ["print"], "ocr": ["ocr"],
+TOOLBAR_MEMBERS = {"thumbs": ["thumbs"], "clean": ["clean"], "open": ["open"], "save": ["save"], "print": ["print"], "ocr": ["ocr"],
                    "find": ["find_bar"], "undo": ["undo", "redo"], "page": ["page_box", "page_total"],
                    "zoom": ["zoom_out", "zoom_box", "zoom_in"], "fit": ["fit_width", "fit_page"],
                    "rotate": ["rotate_left", "rotate_right"], "pages": ["delete_pages", "extract", "insert_file"],
@@ -77,13 +77,15 @@ TOOLBAR_MEMBERS = {"thumbs": ["thumbs"], "open": ["open"], "save": ["save"], "pr
 class MainToolBar(QToolBar):
     """The main toolbar. When the window is too narrow for all of it, Qt leaves out the
     items that don't fit, starting from the right. The menu button must never go, so it
-    stands at the right edge outside the toolbar's layout, in room kept for it there.
-    The » button Qt would offer for the items left out is not shown."""
+    stands at the right edge outside the toolbar's layout, in room kept for it there, and
+    so does the Clean View button while it is the toolbar's last item (see
+    MainWindow.apply_toolbar). The » button Qt would offer for the items left out is not shown."""
 
-    def __init__(self, title, pinned):
+    def __init__(self, title, *pinned):
         super().__init__(title)
-        self.pinned = pinned
-        pinned.setParent(self)
+        self.pinned = pinned              # from the right edge inwards; those hidden take no room
+        for w in pinned:
+            w.setParent(self)
         self.extension = self.findChild(QToolButton, "qt_toolbar_ext_button")
         if self.extension:
             self.extension.setFixedSize(0, 0)
@@ -94,15 +96,20 @@ class MainToolBar(QToolBar):
         return [a for a in self.actions() if a.isVisible() and (w := self.widgetForAction(a)) and w.isHidden()]
 
     def place_pinned(self):
-        size = self.pinned.sizeHint()
+        shown = [w for w in self.pinned if not w.isHidden()]
         gap = self.layout().spacing()
-        if self.contentsMargins().right() != size.width() + gap:
-            self.setContentsMargins(0, 0, size.width() + gap, 0)
+        room = sum(w.sizeHint().width() + gap for w in shown)
+        if self.contentsMargins().right() != room:
+            self.setContentsMargins(0, 0, room, 0)
         inner = self.rect().marginsRemoved(self.layout().contentsMargins())
-        rect = QRect(0, 0, size.width(), min(size.height(), inner.height()))
-        rect.moveCenter(inner.center())
-        rect.moveRight(inner.right())
-        self.pinned.setGeometry(QStyle.visualRect(self.layoutDirection(), self.rect(), rect))
+        right = inner.right()
+        for w in shown:
+            size = w.sizeHint()
+            rect = QRect(0, 0, size.width(), min(size.height(), inner.height()))
+            rect.moveCenter(inner.center())
+            rect.moveRight(right)
+            w.setGeometry(QStyle.visualRect(self.layoutDirection(), self.rect(), rect))
+            right -= size.width() + gap
 
     def resizeEvent(self, e):
         super().resizeEvent(e)
@@ -698,7 +705,7 @@ class MainWindow(QMainWindow):
         self.actions_by_name["redact_text"].setChecked(True)
         A("preferences", "Pre&ferences…", self.preferences, QKeySequence.Preferences)
         A("about", "&About Kosmos PDF", self.about)
-        A("menu", "Menu", lambda: self.menu_button.showMenu(), "F10")
+        A("menu", "Menu", lambda: (self.clean_menu_button if self.clean_view else self.menu_button).showMenu(), "F10")
 
         self.mode_group = QActionGroup(self)
         for name, text, key, tip in (
@@ -755,7 +762,14 @@ class MainWindow(QMainWindow):
         button.setToolTip("Menu (F10)")
         button.setMenu(self.main_menu)
         button.setPopupMode(QToolButton.InstantPopup)
-        tb = self.toolbar = MainToolBar("Main", button)
+        # Clean View's button for the right end, beside the menu button, where the way back
+        # from Clean View is too (on the tab bar): the two are the one button, on and off.
+        clean = self.clean_pinned = QToolButton()
+        clean.setDefaultAction(a["clean"])
+        clean.setAutoRaise(True)
+        clean.setFocusPolicy(Qt.NoFocus)
+        tb = self.toolbar = MainToolBar("Main", button, clean)
+        clean.setIconSize(QSize(theme.TOOLBAR_ICON, theme.TOOLBAR_ICON))
         tb.setMovable(False)
         tb.setIconSize(QSize(theme.TOOLBAR_ICON, theme.TOOLBAR_ICON))
         self.addToolBar(tb)
@@ -791,34 +805,47 @@ class MainWindow(QMainWindow):
         self.set_redact_style(style if style in REDACT_STYLES else "black")
         self.findbar = FindBar(self)
         self.findbar.visibilityChanged.connect(a["find_bar"].setChecked)
-        # In Clean View the toolbar and its menu button are gone; this small button at the
-        # right end of the tabs is the way back that can be seen (F8 is the other).
-        self.clean_view = False
-        back = self.clean_button = QToolButton()
-        back.setObjectName("cleanViewButton")
-        back.setAutoRaise(True)
-        back.setFocusPolicy(Qt.NoFocus)
-        back.setToolTip("Show the toolbar again (F8)")
-        back.clicked.connect(lambda: self.set_clean_view(False))
-        self.tabs.setCornerWidget(back, Qt.TopRightCorner)
-        back.hide()
-        # And at the left end, where the toolbar has them, the two things wanted while
+        # In Clean View the toolbar is gone, and the tab bar stands in for its two ends. At
+        # the right, as on the toolbar: Clean View's button (the same icon, shown pressed,
+        # since it is on), which is the way back that can be seen (F8 is the other), and the
+        # menu button. At the left, where the toolbar has them, the two things wanted while
         # showing documents: the page panel, to move about in one, and Open, for the next.
-        left = self.clean_left = QWidget()
-        row = QHBoxLayout(left)
-        row.setContentsMargins(4, 0, 4, 0)
-        row.setSpacing(2)
-        for name in ("thumbs", "open"):
-            b = QToolButton()
-            b.setDefaultAction(a[name])
-            b.setAutoRaise(True)
-            b.setFocusPolicy(Qt.NoFocus)
-            b.setIconSize(QSize(theme.TOOLBAR_ICON, theme.TOOLBAR_ICON))
-            row.addWidget(b)
-        b.setMenu(self.open_recent_menu)                      # Open, with its arrow for the recent files
-        b.setPopupMode(QToolButton.MenuButtonPopup)
-        self.tabs.setCornerWidget(left, Qt.TopLeftCorner)
-        left.hide()
+        # Their buttons are smaller than the toolbar's, to sit easily in the tab bar's height.
+        self.clean_view = False
+
+        def corner(button, action=None):
+            if action:
+                button.setDefaultAction(action)
+            button.setAutoRaise(True)
+            button.setFocusPolicy(Qt.NoFocus)
+            button.setIconSize(QSize(theme.TOOLBAR_ICON, theme.TOOLBAR_ICON))
+            button.setProperty("tabCorner", True)
+            return button
+
+        back = self.clean_button = corner(QToolButton())
+        back.setObjectName("cleanViewButton")
+        back.setCheckable(True)
+        back.setToolTip("Leave Clean View: show the toolbar again (F8)")
+        back.clicked.connect(lambda: self.set_clean_view(False))
+        menu = self.clean_menu_button = corner(QToolButton())
+        menu.setObjectName("menuButton")
+        menu.setToolTip("Menu (F10)")
+        menu.setMenu(self.main_menu)
+        menu.setPopupMode(QToolButton.InstantPopup)
+        panel, opener = corner(QToolButton(), a["thumbs"]), corner(QToolButton(), a["open"])
+        opener.setMenu(self.open_recent_menu)                 # Open, with its arrow for the recent files
+        opener.setPopupMode(QToolButton.MenuButtonPopup)
+        for name, buttons, where in (("clean_right", (back, menu), Qt.TopRightCorner),
+                                     ("clean_left", (panel, opener), Qt.TopLeftCorner)):
+            holder = QWidget()
+            row = QHBoxLayout(holder)
+            row.setContentsMargins(6, 0, 6, 0)        # (and room below: see set_clean_view)
+            row.setSpacing(4)
+            for b in buttons:
+                row.addWidget(b)
+            setattr(self, name, holder)
+            self.tabs.setCornerWidget(holder, where)
+            holder.hide()
         self.addToolBarBreak()
         self.addToolBar(self.findbar)
 
@@ -832,7 +859,13 @@ class MainWindow(QMainWindow):
             tb.removeAction(act)
             if act.isSeparator():
                 act.deleteLater()
-        for key in dialogs.tidy_dividers(dialogs.toolbar_layout()):
+        layout = dialogs.tidy_dividers(dialogs.toolbar_layout())
+        # Clean View as the last item (as it is to begin with) stands at the right end with
+        # the menu button, where a narrow window can't push it out; anywhere else, it is a
+        # button like the rest.
+        at_end = layout[-1:] == ["clean"]
+        self.clean_pinned.setVisible(at_end)
+        for key in dialogs.tidy_dividers(layout[:-1]) if at_end else layout:
             if key == dialogs.DIVIDER:
                 tb.addSeparator()
                 continue
@@ -848,6 +881,7 @@ class MainWindow(QMainWindow):
         self.open_button.setMenu(self.open_recent_menu)
         self.open_button.setPopupMode(QToolButton.MenuButtonPopup)
         self.ocr_button = tb.widgetForAction(a["ocr"])       # None while OCR is left off
+        tb.place_pinned()
         tb.setUpdatesEnabled(True)
 
     def toolbar_icons(self):
@@ -871,8 +905,13 @@ class MainWindow(QMainWindow):
         self.actions_by_name["clean"].setChecked(on)
         self.toolbar.setVisible(not on)
         self.statusBar().setVisible(not on)
-        self.clean_button.setVisible(on)
-        self.clean_left.setVisible(on)
+        self.clean_button.setChecked(True)        # (a click unchecks it on the way out)
+        for holder in (self.clean_right, self.clean_left):
+            # Qt sets a corner widget against the tab bar's bottom edge, so the buttons sat
+            # too low. Room beneath them lifts them to the middle of the bar.
+            spare = self.tabs.tabBar().sizeHint().height() - self.clean_button.sizeHint().height()
+            holder.layout().setContentsMargins(6, 0, 6, max(0, spare // 2))
+            holder.setVisible(on)
         # The panel starts hidden in Clean View, and can be shown there for the moment (see
         # set_thumbs); leaving puts it back as it was before.
         self.set_thumbs(self._thumbs_before and not on)
@@ -1041,7 +1080,8 @@ class MainWindow(QMainWindow):
             t.thumbs.apply_colors(colors)
         if hasattr(self, "color_button"):
             self.menu_button.setIcon(lucide("menu", colors.text))
-            self.clean_button.setIcon(lucide("chevron-down", colors.text))
+            self.clean_menu_button.setIcon(lucide("menu", colors.text))
+            self.clean_button.setIcon(lucide(LUCIDE["clean"], colors.text))
             self.actions_by_name["mode_highlight"].setIcon(self.hl_icon())
             self.redact_icon.setPixmap(lucide(LUCIDE["mode_redact"], colors.text).pixmap(theme.TOOLBAR_ICON))
             self.findbar.apply_colors(colors)

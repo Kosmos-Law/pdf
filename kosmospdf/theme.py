@@ -302,6 +302,7 @@ QToolButton {{ border:1px solid transparent; border-radius:5px; padding:5px; }}
 QToolButton:hover {{ background:{hover}; }}
 QToolButton:pressed {{ background:{press}; }}
 QToolButton:checked {{ background:{c.rgba(c.accent, 55)}; border-color:{c.rgba(c.accent, 130)}; }}
+QToolButton[tabCorner="true"] {{ padding:2px 3px; border-radius:4px; }}
 QLabel#qt_msgboxex_icon_label {{ padding:1px 6px 0 2px; }}
 QLabel#qt_msgbox_label {{ padding:3px 8px 16px 0; }}
 QToolBar#findBar {{ padding:3px 6px; }}
@@ -311,6 +312,7 @@ QToolButton[popupMode="1"] {{ padding-right:17px; }}
 QToolButton[popupMode="2"] {{ padding-right:18px; }}
 QToolButton#menuButton {{ padding-right:5px; }}
 QToolButton#menuButton::menu-indicator {{ image:none; width:0; }}
+QToolButton#menuButton[tabCorner="true"] {{ padding-right:3px; }}
 QToolButton[popupMode="2"]::menu-indicator {{ subcontrol-position:center right; right:5px; width:9px; height:9px; }}
 QToolButton::menu-button {{ border:none; border-left:1px solid transparent; width:15px;
                            border-top-right-radius:5px; border-bottom-right-radius:5px; }}

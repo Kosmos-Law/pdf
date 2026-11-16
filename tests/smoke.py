@@ -1784,16 +1784,37 @@ for _k in ("window/size", "window/maximized"):
 # --- Clean View: the document alone, for a shared screen -----------------------------------------------------------
 w.tabs.setCurrentWidget(t); w.set_thumbs(True); w.findbar.open_bar(); pump()
 _view = next(m_.menu() for m_ in w.main_menu.actions() if m_.text() == "&View")
+_cb = w.clean_pinned
+_narrow = w.size()
+w.resize(700, _narrow.height()); pump()
+_stays = (_cb.isVisible() and w.menu_button.isVisible() and bool(w.toolbar.hidden_actions())
+          and _cb.geometry().right() < w.menu_button.geometry().left()
+          and all(w.toolbar.widgetForAction(x).geometry().right() < _cb.geometry().left()
+                  for x in w.toolbar.actions() if x.isVisible() and x not in w.toolbar.hidden_actions()))
+w.resize(_narrow); pump()
+check("Clean View has a button at the right end of the toolbar, beside the menu button, and a narrow window keeps both",
+      _stays and _cb.defaultAction() is w.actions_by_name["clean"] and not _cb.icon().isNull() and not _cb.isChecked()
+      and _cb.geometry().right() < w.menu_button.geometry().left() and _cb.geometry().left() > w.toolbar.width() - 90,
+      f"{_stays} {_cb.geometry()} {w.menu_button.geometry()}")
+_cb.click(); pump()
+_on = not w.toolbar.isVisible() and w.clean_view
+w.clean_button.click(); pump()
+check("the button turns Clean View on, and the one on the tab bar turns it off again", _on and w.toolbar.isVisible()
+      and not w.clean_view)
+w.findbar.open_bar(); pump()
 check("Clean View is in the View menu, and the way back is not shown until it is on",
-      w.actions_by_name["clean"] in _view.actions() and not w.clean_button.isVisible())
+      w.actions_by_name["clean"] in _view.actions() and not w.clean_right.isVisible())
 w.activateWindow(); settle(100)
 QTest.keyClick(w, Qt.Key_F8); pump()
 check("F8 hides the toolbar, find bar, page panel and status bar, and leaves the tabs and the page",
       not w.toolbar.isVisible() and not w.findbar.isVisible() and not w.statusBar().isVisible()
       and not t.thumbs.isVisible() and w.tabs.tabBar().isVisible() and t.view.isVisible()
       and w.actions_by_name["clean"].isChecked())
-check("a button at the right end of the tabs is the way back", w.clean_button.isVisible()
-      and w.clean_button.mapTo(w, QPoint(0, 0)).x() > w.width() - 60 and not w.clean_button.icon().isNull(),
+check("a button at the right end of the tabs is the way back: the toolbar's Clean View button over again, pressed",
+      w.clean_right.isVisible()
+      and w.clean_button.mapTo(w, QPoint(0, 0)).x() > w.width() - 80 and w.clean_button.isChecked()
+      and w.clean_button.icon().pixmap(18).toImage() == w.actions_by_name["clean"].icon().pixmap(18).toImage()
+      and w.actions_by_name["clean"].icon().pixmap(18).toImage() != w.actions_by_name["thumbs"].icon().pixmap(18).toImage(),
       str(w.clean_button.geometry()))
 _lb = {b.defaultAction(): b for b in w.clean_left.findChildren(QToolButton)}
 _pb, _ob = _lb[w.actions_by_name["thumbs"]], _lb[w.actions_by_name["open"]]
@@ -1801,6 +1822,19 @@ check("at the left end of the tabs are the page panel's button and Open, with it
       w.clean_left.isVisible() and _pb.isVisible() and _ob.isVisible() and _pb.x() < _ob.x()
       and w.clean_left.mapTo(w, QPoint(0, 0)).x() < 10 and w.tabs.tabBar().mapTo(w, QPoint(0, 0)).x() >= w.clean_left.width()
       and _ob.menu() is w.open_recent_menu and not _pb.icon().isNull() and not _pb.isChecked())
+_cm = w.clean_menu_button
+check("the menu button is there too, at the far right as on the toolbar, with the same menus",
+      _cm.isVisible() and _cm.menu() is w.main_menu and not _cm.icon().isNull()
+      and _cm.mapTo(w, QPoint(0, 0)).x() > w.clean_button.mapTo(w, QPoint(0, 0)).x()
+      and _cm.mapTo(w, QPoint(0, 0)).x() + _cm.width() > w.width() - 12)
+_bar = w.tabs.tabBar()
+_mid = lambda x: x.mapTo(w, QPoint(0, 0)).y() + x.height() / 2     # noqa: E731
+check("they stand in the middle of the tab bar's height, not against its bottom edge",
+      all(abs(_mid(b) - _mid(_bar)) <= 0.5 for b in (w.clean_button, _cm, _pb, _ob)),
+      f"{[_mid(b) for b in (w.clean_button, _cm, _pb, _ob)]} bar {_mid(_bar)}")
+check("the tab bar's buttons are smaller than the toolbar's, with room above and below",
+      w.clean_button.height() < w.menu_button.height() and w.clean_button.height() <= w.tabs.tabBar().height() - 6
+      and _pb.height() == w.clean_button.height(), f"{w.clean_button.height()} in {w.tabs.tabBar().height()}")
 w.grab().save(os.path.join(OUT, "06-clean-view.png"))
 _pb.click(); pump()
 _shown = t.thumbs.isVisible() and _pb.isChecked()
@@ -1822,7 +1856,7 @@ check("shortcuts still work (Ctrl+F opens the find bar), and other tabs follow t
 w.tabs.setCurrentWidget(t); pump()
 w.clean_button.click(); pump()
 check("the button brings everything back, the page panel as it was set",
-      w.toolbar.isVisible() and w.statusBar().isVisible() and t.thumbs.isVisible() and not w.clean_button.isVisible()
+      w.toolbar.isVisible() and w.statusBar().isVisible() and t.thumbs.isVisible() and not w.clean_right.isVisible()
       and not w.clean_left.isVisible() and w.tabs.tabBar().mapTo(w, QPoint(0, 0)).x() < 10
       and not w.actions_by_name["clean"].isChecked() and dialogs.settings().value("view/thumbs", type=bool) is True)
 _w2 = window.MainWindow(); _w2.show(); pump()
@@ -1880,11 +1914,20 @@ def pick(lst, key):
     lst.setCurrentRow(lst.keys().index(key)); pump()
 
 
+def roomy():
+    """Make the window wide enough for the whole toolbar, whatever the system's fonts make
+    that: a widget the toolbar has no room for is hidden, which is not what is being checked."""
+    w.resize(max(w.width(), w.toolbar.sizeHint().width() + 60), w.height()); pump()
+
+
+_size_before = w.size()
+roomy()
 _tb_before = toolbar_now(w)
 _usual = ["thumbs", "|", "open", "save", "print", "ocr", "find_bar", "|", "undo", "redo", "|", "?", "?", "zoom_out", "?",
           "zoom_in", "|", "rotate_left", "rotate_right", "|", "mode_hand", "mode_select", "?", "mode_typewriter", "?",
           "mode_label"]
-check("the toolbar starts as it always was", _tb_before == _usual and w.page_box.isVisible() and w.zoom_box.isVisible()
+check("the toolbar starts with the usual buttons, and Clean View at the right end beside the menu button",
+      w.clean_pinned.isVisible() and dialogs.TOOLBAR_DEFAULT[-1] == "clean" and _tb_before == _usual and w.page_box.isVisible() and w.zoom_box.isVisible()
       and w.color_button.isVisible() and w.font_size.isVisible(), str(_tb_before))
 check("every item has its buttons, and the lists know every item",
       set(dialogs.TOOLBAR_ITEMS) == set(window.TOOLBAR_MEMBERS) == set(dialogs.TOOLBAR_ALL) - {"|"}
@@ -1925,11 +1968,14 @@ prefs_do(rearrange)
 _now = toolbar_now(w)
 _want = ["thumbs", "|", "open", "find_bar", "save", "ocr", "|", "?", "?", "zoom_out", "?", "zoom_in", "fit_width", "fit_page",
          "|", "rotate_left", "rotate_right", "|", "mode_hand", "mode_select", "?", "mode_typewriter", "?", "mode_label", "|",
-         "mode_redact"]
+         "clean", "mode_redact"]
 check("items can be taken off, added and moved, and the toolbar follows, with no divider doubled where a group went",
       _now == _want and _seen["divider stays"], str(_now))
+check("Clean View, no longer the last item, is a button in its place like the rest, and leaves the right end",
+      not w.clean_pinned.isVisible() and w.toolbar.widgetForAction(w.actions_by_name["clean"]) is not None)
 check("the toolbar changes as it is done, before OK, and in every window",
       "print" not in _seen["live"] and "undo" not in _seen["live"] and toolbar_now(_w2) == _now, str(_seen["live"]))
+roomy()
 check("the widgets come through being moved: page box, zoom box, highlight colours and font size",
       all(x.isVisible() for x in (w.page_box, w.page_total, w.zoom_box, w.color_button, w.font_size))
       and w.color_button.menu() is not None and w.open_button.menu() is w.open_recent_menu
@@ -1979,9 +2025,10 @@ def strip(d):
 
 prefs_do(strip)
 check("with everything taken off, Open and the menu button remain", toolbar_now(w) == ["open"] and w.menu_button.isVisible()
+      and not w.clean_pinned.isVisible()
       and not w.page_box.isVisible() and not w.font_size.isVisible(), str(toolbar_now(w)))
 prefs_do(lambda d: d.reset_button.click())
-check("Reset to Default puts the toolbar back as it first was", toolbar_now(w) == _tb_before
+check("Reset to Default puts the toolbar back as it first was", toolbar_now(w) == _tb_before and w.clean_pinned.isVisible()
       and dialogs.toolbar_layout() == dialogs.TOOLBAR_DEFAULT)
 # choices made with the tick boxes this replaced are carried over
 dialogs.settings().remove("toolbar/layout")
@@ -1989,7 +2036,8 @@ dialogs.settings().setValue("toolbar/hidden", "print,undo,rotate"); dialogs.sett
 w.apply_toolbar(); pump()
 check("a toolbar set up with the earlier tick boxes comes across as it was",
       toolbar_now(w) == ["thumbs", "|", "open", "save", "ocr", "find_bar", "|", "?", "?", "zoom_out", "?", "zoom_in", "|",
-                         "mode_hand", "mode_select", "?", "mode_typewriter", "?", "mode_label", "mode_redact", "|", "bates"],
+                         "mode_hand", "mode_select", "?", "mode_typewriter", "?", "mode_label", "mode_redact", "|", "bates"]
+      and w.clean_pinned.isVisible(),
       str(toolbar_now(w)))
 dialogs.settings().setValue("toolbar/layout", "nonsense,save,save,|,zoom")
 check("a damaged setting still gives a toolbar, with Open on it", dialogs.toolbar_layout() == ["open", "save", "|", "zoom"])
@@ -1997,6 +2045,7 @@ for _k in dialogs.PreferencesDialog.TOOLBAR_KEYS:
     dialogs.settings().remove(_k)
 w.apply_toolbar(); pump()
 check("(toolbar back to the usual for the rest of the run)", toolbar_now(w) == _tb_before)
+w.resize(_size_before); pump()
 
 # a file reopens at the page and zoom it was left at
 _left = os.path.join(OUT, "left.pdf")
