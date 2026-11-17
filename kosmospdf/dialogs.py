@@ -575,7 +575,7 @@ def opening_tool(s=None):
 # with its shortcut. Open cannot be left off, and the menu button, at the right end, is
 # not an item at all, so there is always a way to a file and to everything else.
 DIVIDER = "|"
-TOOLBAR_ITEMS = {"thumbs": "Page panel", "clean": "Clean View", "open": "Open", "save": "Save", "print": "Print", "ocr": "OCR", "find": "Find",
+TOOLBAR_ITEMS = {"thumbs": "Page panel", "clean": "Presentation View", "open": "Open", "save": "Save", "print": "Print", "ocr": "OCR", "find": "Find",
                  "undo": "Undo and Redo", "page": "Page number", "zoom": "Zoom", "fit": "Fit Width and Fit Page",
                  "rotate": "Rotate", "pages": "Delete, Copy Out, Insert Pages", "hand": "Move", "select": "Select",
                  "highlight": "Highlight", "typewriter": "Typewriter", "label": "Exhibit Label", "redact": "Redact",

@@ -1781,7 +1781,7 @@ for _x in (_w5, _w4):
 for _k in ("window/size", "window/maximized"):
     dialogs.settings().remove(_k)
 
-# --- Clean View: the document alone, for a shared screen -----------------------------------------------------------
+# --- Presentation View: the document alone, for a shared screen -----------------------------------------------------------
 w.tabs.setCurrentWidget(t); w.set_thumbs(True); w.findbar.open_bar(); pump()
 _view = next(m_.menu() for m_ in w.main_menu.actions() if m_.text() == "&View")
 _cb = w.clean_pinned
@@ -1792,17 +1792,17 @@ _stays = (_cb.isVisible() and w.menu_button.isVisible() and bool(w.toolbar.hidde
           and all(w.toolbar.widgetForAction(x).geometry().right() < _cb.geometry().left()
                   for x in w.toolbar.actions() if x.isVisible() and x not in w.toolbar.hidden_actions()))
 w.resize(_narrow); pump()
-check("Clean View has a button at the right end of the toolbar, beside the menu button, and a narrow window keeps both",
+check("Presentation View has a button at the right end of the toolbar, beside the menu button, and a narrow window keeps both",
       _stays and _cb.defaultAction() is w.actions_by_name["clean"] and not _cb.icon().isNull() and not _cb.isChecked()
       and _cb.geometry().right() < w.menu_button.geometry().left() and _cb.geometry().left() > w.toolbar.width() - 90,
       f"{_stays} {_cb.geometry()} {w.menu_button.geometry()}")
 _cb.click(); pump()
 _on = not w.toolbar.isVisible() and w.clean_view
 w.clean_button.click(); pump()
-check("the button turns Clean View on, and the one on the tab bar turns it off again", _on and w.toolbar.isVisible()
+check("the button turns Presentation View on, and the one on the tab bar turns it off again", _on and w.toolbar.isVisible()
       and not w.clean_view)
 w.findbar.open_bar(); pump()
-check("Clean View is in the View menu, and the way back is not shown until it is on",
+check("Presentation View is in the View menu, and the way back is not shown until it is on",
       w.actions_by_name["clean"] in _view.actions() and not w.clean_right.isVisible())
 w.activateWindow(); settle(100)
 QTest.keyClick(w, Qt.Key_F8); pump()
@@ -1810,7 +1810,7 @@ check("F8 hides the toolbar, find bar, page panel and status bar, and leaves the
       not w.toolbar.isVisible() and not w.findbar.isVisible() and not w.statusBar().isVisible()
       and not t.thumbs.isVisible() and w.tabs.tabBar().isVisible() and t.view.isVisible()
       and w.actions_by_name["clean"].isChecked())
-check("a button at the right end of the tabs is the way back: the toolbar's Clean View button over again, pressed",
+check("a button at the right end of the tabs is the way back: the toolbar's Presentation View button over again, pressed",
       w.clean_right.isVisible()
       and w.clean_button.mapTo(w, QPoint(0, 0)).x() > w.width() - 80 and w.clean_button.isChecked()
       and w.clean_button.icon().pixmap(18).toImage() == w.actions_by_name["clean"].icon().pixmap(18).toImage()
@@ -1846,7 +1846,7 @@ w.grab().save(os.path.join(OUT, "06b-clean-view-panel.png"))
 QTest.keyClick(w, Qt.Key_F4); pump()
 check("the panel's button (or F4) shows and hides the panel there, for the moment only: the setting is left alone",
       _shown and not t.thumbs.isVisible() and dialogs.settings().value("view/thumbs", type=bool) is True)
-_pb.click(); pump()                # left showing: leaving Clean View goes by how it was before, all the same
+_pb.click(); pump()                # left showing: leaving Presentation View goes by how it was before, all the same
 QTest.keyClick(w, Qt.Key_F, Qt.ControlModifier); pump()
 _found = w.findbar.isVisible()
 w.findbar.close_bar()
@@ -1926,7 +1926,7 @@ _tb_before = toolbar_now(w)
 _usual = ["thumbs", "|", "open", "save", "print", "ocr", "find_bar", "|", "undo", "redo", "|", "?", "?", "zoom_out", "?",
           "zoom_in", "|", "rotate_left", "rotate_right", "|", "mode_hand", "mode_select", "?", "mode_typewriter", "?",
           "mode_label"]
-check("the toolbar starts with the usual buttons, and Clean View at the right end beside the menu button",
+check("the toolbar starts with the usual buttons, and Presentation View at the right end beside the menu button",
       w.clean_pinned.isVisible() and dialogs.TOOLBAR_DEFAULT[-1] == "clean" and _tb_before == _usual and w.page_box.isVisible() and w.zoom_box.isVisible()
       and w.color_button.isVisible() and w.font_size.isVisible(), str(_tb_before))
 check("every item has its buttons, and the lists know every item",
@@ -1971,7 +1971,7 @@ _want = ["thumbs", "|", "open", "find_bar", "save", "ocr", "|", "?", "?", "zoom_
          "clean", "mode_redact"]
 check("items can be taken off, added and moved, and the toolbar follows, with no divider doubled where a group went",
       _now == _want and _seen["divider stays"], str(_now))
-check("Clean View, no longer the last item, is a button in its place like the rest, and leaves the right end",
+check("Presentation View, no longer the last item, is a button in its place like the rest, and leaves the right end",
       not w.clean_pinned.isVisible() and w.toolbar.widgetForAction(w.actions_by_name["clean"]) is not None)
 check("the toolbar changes as it is done, before OK, and in every window",
       "print" not in _seen["live"] and "undo" not in _seen["live"] and toolbar_now(_w2) == _now, str(_seen["live"]))

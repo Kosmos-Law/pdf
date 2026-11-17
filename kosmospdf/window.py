@@ -78,7 +78,7 @@ class MainToolBar(QToolBar):
     """The main toolbar. When the window is too narrow for all of it, Qt leaves out the
     items that don't fit, starting from the right. The menu button must never go, so it
     stands at the right edge outside the toolbar's layout, in room kept for it there, and
-    so does the Clean View button while it is the toolbar's last item (see
+    so does the Presentation View button while it is the toolbar's last item (see
     MainWindow.apply_toolbar). The » button Qt would offer for the items left out is not shown."""
 
     def __init__(self, title, *pinned):
@@ -682,7 +682,7 @@ class MainWindow(QMainWindow):
         A("actual", "&Actual Size", lambda: self.tab and self.tab.view.set_zoom(1.0), "Ctrl+0")
         A("thumbs", "&Page Panel", lambda on: self.set_thumbs(on), "F4", tip="Show or hide the page panel (F4)",
           checkable=True).setChecked(dialogs.settings().value("view/thumbs", True, type=bool))
-        A("clean", "&Clean View", lambda on: self.set_clean_view(on), "F8", checkable=True,
+        A("clean", "P&resentation View", lambda on: self.set_clean_view(on), "F8", checkable=True,
           tip="Hide the toolbar, page panel and status bar, leaving the document: for sharing your screen (F8)")
         A("bates", "&Bates Numbering…", self.bates)
         A("bates_files", "Bates Number &Files…", self.bates_files,
@@ -763,8 +763,8 @@ class MainWindow(QMainWindow):
         button.setToolTip("Menu (F10)")
         button.setMenu(self.main_menu)
         button.setPopupMode(QToolButton.InstantPopup)
-        # Clean View's button for the right end, beside the menu button, where the way back
-        # from Clean View is too (on the tab bar): the two are the one button, on and off.
+        # Presentation View's button for the right end, beside the menu button, where the way back
+        # from Presentation View is too (on the tab bar): the two are the one button, on and off.
         clean = self.clean_pinned = QToolButton()
         clean.setDefaultAction(a["clean"])
         clean.setAutoRaise(True)
@@ -806,8 +806,8 @@ class MainWindow(QMainWindow):
         self.set_redact_style(style if style in REDACT_STYLES else "black")
         self.findbar = FindBar(self)
         self.findbar.visibilityChanged.connect(a["find_bar"].setChecked)
-        # In Clean View the toolbar is gone, and the tab bar stands in for its two ends. At
-        # the right, as on the toolbar: Clean View's button (the same icon, shown pressed,
+        # In Presentation View the toolbar is gone, and the tab bar stands in for its two ends. At
+        # the right, as on the toolbar: Presentation View's button (the same icon, shown pressed,
         # since it is on), which is the way back that can be seen (F8 is the other), and the
         # menu button. At the left, where the toolbar has them, the two things wanted while
         # showing documents: the page panel, to move about in one, and Open, for the next.
@@ -826,7 +826,7 @@ class MainWindow(QMainWindow):
         back = self.clean_button = corner(QToolButton())
         back.setObjectName("cleanViewButton")
         back.setCheckable(True)
-        back.setToolTip("Leave Clean View: show the toolbar again (F8)")
+        back.setToolTip("Leave Presentation View: show the toolbar again (F8)")
         back.clicked.connect(lambda: self.set_clean_view(False))
         menu = self.clean_menu_button = corner(QToolButton())
         menu.setObjectName("menuButton")
@@ -861,7 +861,7 @@ class MainWindow(QMainWindow):
             if act.isSeparator():
                 act.deleteLater()
         layout = dialogs.tidy_dividers(dialogs.toolbar_layout())
-        # Clean View as the last item (as it is to begin with) stands at the right end with
+        # Presentation View as the last item (as it is to begin with) stands at the right end with
         # the menu button, where a narrow window can't push it out; anywhere else, it is a
         # button like the rest.
         at_end = layout[-1:] == ["clean"]
@@ -893,7 +893,7 @@ class MainWindow(QMainWindow):
                 for key, names in TOOLBAR_MEMBERS.items()}
 
     def set_clean_view(self, on):
-        """Clean View: nothing but the tabs and the document, for showing an exhibit on a
+        """Presentation View: nothing but the tabs and the document, for showing an exhibit on a
         shared screen. The toolbar, page panel and status bar go, and come back as they
         were. Shortcuts go on working, and Ctrl+F still opens the find bar. The tab bar
         gains the page panel's button and Open at its left end, and the way back at its right."""
@@ -913,7 +913,7 @@ class MainWindow(QMainWindow):
             spare = self.tabs.tabBar().sizeHint().height() - self.clean_button.sizeHint().height()
             holder.layout().setContentsMargins(6, 0, 6, max(0, spare // 2))
             holder.setVisible(on)
-        # The panel starts hidden in Clean View, and can be shown there for the moment (see
+        # The panel starts hidden in Presentation View, and can be shown there for the moment (see
         # set_thumbs); leaving puts it back as it was before.
         self.set_thumbs(self._thumbs_before and not on)
 
@@ -1190,7 +1190,7 @@ class MainWindow(QMainWindow):
         self.actions_by_name["thumbs"].setChecked(on)
         for t in self.doc_tabs():
             self.show_thumbs(t, on)
-        if not self.clean_view:           # in Clean View it is shown or hidden for now, not for good
+        if not self.clean_view:           # in Presentation View it is shown or hidden for now, not for good
             dialogs.settings().setValue("view/thumbs", on)
 
     def show_thumbs(self, t, on):
