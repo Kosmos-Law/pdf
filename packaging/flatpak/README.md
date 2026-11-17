@@ -1,8 +1,8 @@
 # Kosmos PDF as a Flatpak
 
 Kosmos PDF is published as a Flatpak from our own signed repository, so people
-can install it from kosmos.law and receive updates automatically through their
-software updater, without a Flathub listing.
+can install it from kosmos.law and update it from the app itself, without a
+Flathub listing.
 
 ## For users
 
@@ -11,8 +11,11 @@ handles it), or run:
 
     flatpak install --user https://kosmos.law/flatpak/kosmospdf.flatpakref
 
-This installs the app and subscribes to the Kosmos repository, so updates arrive
-with other system updates. If it's your first per-user Flatpak app and it doesn't
+This installs the app and subscribes to the Kosmos repository. To update, choose
+Help > Check for Updates in the app (Flatpak asks your leave the first time), or run
+`flatpak update --user law.kosmos.KosmosPDF`. A software updater that handles per-user
+Flatpaks brings updates in as well; Linux Mint's Update Manager doesn't, since it
+looks only at Flatpaks installed for the whole system. If it's your first per-user Flatpak app and it doesn't
 appear in the Menu, restart Cinnamon (Ctrl+Alt+Esc) or log out and back in once. The Flatpak includes OCR (Tesseract, English) and PDF/A
 conversion (OCRmyPDF, Ghostscript); nothing else needs installing.
 
@@ -40,7 +43,7 @@ without the theme, Kosmos PDF falls back to a dark Kosmos palette.)
    by side). James's own copy follows production, like everyone else's, so he sees
    each release exactly as users do, one step later.
 4. `tools/flatpak_deploy.sh production` copies the **same** build, unchanged, to
-   https://kosmos.law/flatpak/, and users' copies update from it on their own.
+   https://kosmos.law/flatpak/, where users' copies find it when they next update.
 
 The landing page needs no change for a release: it links to
 `kosmos.law/flatpak/kosmospdf.flatpakref`, which stays put. (`latest.json` beside

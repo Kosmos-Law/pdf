@@ -14,7 +14,7 @@ still be edited.
 
 Downloads for both systems are at https://kosmos.law/pdf/.
 
-**Linux:** as a Flatpak, with automatic updates (it includes OCR and PDF/A support; see
+**Linux:** as a Flatpak (it includes OCR and PDF/A support; see
 `packaging/flatpak/README.md`):
 
     flatpak install --user https://kosmos.law/flatpak/kosmospdf.flatpakref
@@ -22,6 +22,10 @@ Downloads for both systems are at https://kosmos.law/pdf/.
 **Windows:** run `KosmosPDF-Setup.exe` from the
 [latest release](https://github.com/Kosmos-Law/pdf/releases/latest). It installs for
 the current user, OCR and PDF/A included; see `packaging/windows/README.md`.
+
+**Updating:** Help > Check for Updates. The Flatpak installs the new version itself
+(Flatpak asks your leave the first time); on Windows it offers the new installer. The
+app looks for updates only when asked.
 
 **Linux, from source**, on Debian, Ubuntu, Linux Mint and the like (or download the ZIP
 from GitHub instead of cloning):

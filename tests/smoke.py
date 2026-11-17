@@ -9,7 +9,7 @@ import pymupdf as fitz
 from PySide6.QtCore import QEvent, QPoint, QPointF, QSize, Qt, QTimer
 from PySide6.QtGui import QColor, QGuiApplication, QMouseEvent, QWheelEvent
 from PySide6.QtTest import QTest
-from PySide6.QtWidgets import QApplication, QDialog, QFileDialog, QMenu, QMessageBox, QToolButton
+from PySide6.QtWidgets import QApplication, QDialog, QFileDialog, QMenu, QMessageBox, QPushButton, QToolButton
 
 if not os.environ.get("KOSMOSPDF_TEST_INSTALLED"):   # set when testing an installed build (e.g. the Flatpak)
     sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -2082,6 +2082,126 @@ reopen(leave=(0.5, None, 2))
 w.clear_recent()
 check("Clear Recent Documents forgets where files were left as well", reopen() == (None, 200, 0))
 dialogs.settings().remove("view/default_zoom"); dialogs.forget_views()
+
+# --- Help > Check for Updates ------------------------------------------------------------------------------------
+from PySide6.QtCore import QObject, Signal  # noqa: E402
+from PySide6.QtGui import QDesktopServices  # noqa: E402
+from kosmospdf import updates  # noqa: E402
+
+said, opened, press = [], [], [False]
+real_box_exec, real_open_url = QMessageBox.exec, QDesktopServices.openUrl
+real_latest, real_flatpak, real_id, real_superseded = (updates.latest_release, updates.FlatpakUpdate, updates.FLATPAK_ID,
+                                                       updates.superseded)
+
+
+def _box_exec(self):
+    said.append(self.text())
+    if press[0] and self.defaultButton():
+        self.defaultButton().click()
+    return 0
+
+
+class FakeFlatpak(QObject):
+    """Stands in for Flatpak's update service, which a test must not set going."""
+    progress = Signal(int)
+    done = Signal(str, str)
+    stopped = False
+
+    def start(self, window_id=""):
+        self.asked = window_id
+
+    def stop(self):
+        self.stopped = True
+
+
+def look(latest):
+    """Help > Check for Updates outside the Flatpak, with GitHub answering `latest`
+    (or failing, if that is an exception); what the app then said."""
+    def answer(timeout=15):
+        if isinstance(latest, Exception):
+            raise latest
+        return latest
+    updates.latest_release = answer
+    del said[:]
+    w.actions_by_name["updates"].trigger()
+    for _ in range(200):
+        if w.update_check.finished:
+            break
+        pump(1)
+    return said[-1] if said else ""
+
+
+QMessageBox.exec = _box_exec
+QDesktopServices.openUrl = staticmethod(lambda url: opened.append(url.toString()) or True)
+try:
+    mine = updates.__version__
+    check("version numbers compare by number, not by spelling",
+          updates.version_key("0.10.0") > updates.version_key("0.9.9") and updates.version_key("v0.5.1") == (0, 5, 1)
+          and updates.version_key("soon") == ())
+    help_menu = [m for m in w.main_menu.findChildren(QMenu) if m.title() == "&Help"][0]
+    bare = window.MainWindow()
+    check("Check for Updates is in the Help menu, and works with no document open",
+          w.actions_by_name["updates"] in help_menu.actions() and bare.actions_by_name["updates"].isEnabled())
+    bare.close()
+
+    updates.FLATPAK_ID = None
+    text = look(mine)
+    check("with nothing newer released, it says this is the latest version", f"{mine} is the latest version" in text, text)
+    text = look("0.0.1")
+    check("an older release than the one running is not offered", "latest version" in text and not opened, text)
+    text = look("99.0.0")
+    check("a newer release is announced with both version numbers, and nothing is downloaded unasked",
+          "99.0.0 is available" in text and mine in text and not opened, text)
+    press[0] = True
+    look("v99.0.0")
+    press[0] = False
+    check("its button opens the download", len(opened) == 1 and opened[0] in (updates.INSTALLER, updates.DOWNLOAD_PAGE),
+          str(opened))
+    text = look(OSError("no network here"))
+    check("when the check can't be made, it says so and why", "Couldn't check" in text and "no network here" in text, text)
+
+    updates.FLATPAK_ID, updates.FlatpakUpdate, updates.superseded = "law.kosmos.KosmosPDF", FakeFlatpak, lambda: False
+    del said[:]
+    w.check_for_updates()
+    job = w.update_check
+    w.check_for_updates()
+    check("inside the Flatpak it asks Flatpak to update, once however often it is clicked",
+          isinstance(job.worker, FakeFlatpak) and w.update_check is job and job.dlg.isVisible() and not said)
+    job.worker.progress.emit(40)
+    check("the installation shows its progress", job.dlg.value() == 40 and "Installing" in job.dlg.labelText(),
+          f"{job.dlg.value()} {job.dlg.labelText()}")
+    job.worker.done.emit("updated", "")
+    check("once installed, it says to close and reopen the app", job.finished and not job.dlg.isVisible()
+          and "has been updated" in said[-1] and "open it again" in said[-1], str(said))
+
+    def flatpak_says(outcome, detail=""):
+        del said[:]
+        w.check_for_updates()
+        w.update_check.worker.done.emit(outcome, detail)
+        return said[-1] if said else ""
+
+    text = flatpak_says("current")
+    check("with nothing to install, it says this is the latest version", f"{mine} is the latest version" in text, text)
+    updates.superseded = lambda: True
+    text = flatpak_says("current")
+    check("if the update went in while the app was running, it says to reopen it", "already installed" in text, text)
+    updates.superseded = lambda: False
+    text = flatpak_says("denied")
+    check("if updating was turned down, it says so and gives the command to do it by hand",
+          "isn't allowed" in text and "flatpak update law.kosmos.KosmosPDF" in text, text)
+    text = flatpak_says("failed", "While pulling: no route to host")
+    check("a failure is reported with its reason", "couldn't be updated" in text and "no route to host" in text, text)
+    del said[:]
+    w.check_for_updates()
+    job = w.update_check
+    job.dlg.findChild(QPushButton).click()
+    job.worker.done.emit("updated", "")
+    check("Cancel calls the update off, and a late answer is ignored", job.worker.stopped and job.finished and not said,
+          str(said))
+finally:
+    QMessageBox.exec, QDesktopServices.openUrl = real_box_exec, real_open_url
+    updates.latest_release, updates.FlatpakUpdate, updates.FLATPAK_ID, updates.superseded = (
+        real_latest, real_flatpak, real_id, real_superseded)
 
 w.tabs.setCurrentWidget(t)
 pump(200)

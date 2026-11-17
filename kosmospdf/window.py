@@ -14,7 +14,7 @@ from PySide6.QtWidgets import (QApplication, QComboBox, QDoubleSpinBox, QFileDia
                                QProgressDialog, QSizePolicy, QSplitter, QStyle, QTabBar, QTabWidget,
                                QToolBar, QToolButton, QVBoxLayout, QWidget)
 
-from . import dialogs, labels, printing
+from . import dialogs, labels, printing, updates
 from .core import (MIME_PAGES, MIME_TAB, REDACT_STYLES, PdfDocument, is_image, load_any, mark_redaction, mime_pdf_bytes,
                    pages_mime)
 from .pageview import HIGHLIGHT_COLORS, PageView
@@ -55,7 +55,7 @@ LUCIDE = {
     "extract": "file-output", "insert_blank": "file-plus", "insert_file": "file-input",
     "zoom_in": "zoom-in", "zoom_out": "zoom-out", "fit_width": "move-horizontal", "fit_page": "maximize",
     "thumbs": "panel-left", "clean": "presentation", "bates": "hash", "bates_files": "files", "ocr": "scan-text", "pdfa": "file-check", "flatten": "layers",
-    "redact_search": "text-search", "apply_redactions": "check-check", "redact_done": "x", "about": "info",
+    "redact_search": "text-search", "apply_redactions": "check-check", "redact_done": "x", "about": "info", "updates": "download",
     "redact_text": "text-select", "redact_area": "square-dashed",
     "mode_select": "text-cursor", "mode_highlight": "highlighter", "mode_typewriter": "type", "mode_redact": "eye-off",
     "mode_label": "stamp", "label_files": "stamp", "mode_hand": "hand",
@@ -704,6 +704,7 @@ class MainWindow(QMainWindow):
         self.redact_by = "text"
         self.actions_by_name["redact_text"].setChecked(True)
         A("preferences", "Pre&ferences…", self.preferences, QKeySequence.Preferences)
+        A("updates", "Check for &Updates…", self.check_for_updates)
         A("about", "&About Kosmos PDF", self.about)
         A("menu", "Menu", lambda: (self.clean_menu_button if self.clean_view else self.menu_button).showMenu(), "F10")
 
@@ -750,7 +751,7 @@ class MainWindow(QMainWindow):
                         "delete_pages", None, "extract", "insert_blank", "insert_file", "select_all_pages"])
         menu("&Tools", ["mode_hand", "mode_select", "mode_highlight", "mode_typewriter", "mode_label", "mode_redact", None,
                         "bates", "bates_files", "label_files", "ocr", "pdfa", "flatten"])
-        menu("&Help", ["about"])
+        menu("&Help", ["updates", None, "about"])
         # Qt hears a menu item's shortcut only while its menu is in reach; with no menu bar,
         # the window has to hold every action itself for Ctrl+S, F3 and the rest to work.
         self.addActions(list(a.values()))
@@ -1035,7 +1036,7 @@ class MainWindow(QMainWindow):
         self.tabs.setVisible(has)
         self.empty.setVisible(not has)
         for n, a in self.actions_by_name.items():
-            if n not in ("open", "new_window", "combine", "images", "bates_files", "label_files", "quit", "about", "preferences",
+            if n not in ("open", "new_window", "combine", "images", "bates_files", "label_files", "quit", "about", "updates", "preferences",
                          "thumbs", "redact_done", "menu"):
                 a.setEnabled(has)
         if has:
@@ -1815,6 +1816,12 @@ class MainWindow(QMainWindow):
         dlg = dialogs.PreferencesDialog(self, self.toolbar_icons())
         dlg.toolbar_changed.connect(lambda: [w.apply_toolbar() for w in WINDOWS])     # as it is rearranged
         dlg.exec()
+
+    def check_for_updates(self):
+        """Looks for a newer version, and inside the Flatpak installs it (see updates.py)."""
+        running = getattr(self, "update_check", None)
+        if running is None or running.finished:
+            self.update_check = updates.Check(self)
 
     def about(self):
         QMessageBox.about(self, "Kosmos PDF", f"Kosmos PDF {QApplication.instance().applicationVersion()}\n"
