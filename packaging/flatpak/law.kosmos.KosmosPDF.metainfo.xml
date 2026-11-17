@@ -39,6 +39,11 @@
     <color type="primary" scheme_preference="dark">#2e3440</color>
   </branding>
   <releases>
+    <release version="0.5.2" date="2026-11-16">
+      <description>
+        <p>Check for Updates, in the Help menu. Installed as a Flatpak, Kosmos PDF finds and installs the new version itself (Flatpak asks your leave the first time), then asks to be closed and reopened. On Windows it tells you when a newer version is out and downloads its installer. It looks only when you ask.</p>
+      </description>
+    </release>
     <release version="0.5.1" date="2026-11-16">
       <description>
         <p>Preferences (in the Edit menu), a Clean View for sharing your screen, and a toolbar you can arrange.</p>
