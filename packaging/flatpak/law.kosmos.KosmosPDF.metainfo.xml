@@ -39,6 +39,11 @@
     <color type="primary" scheme_preference="dark">#2e3440</color>
   </branding>
   <releases>
+    <release version="0.5.4" date="2026-11-19">
+      <description>
+        <p>A new icon: the same page, now in solid dark red.</p>
+      </description>
+    </release>
     <release version="0.5.3" date="2026-11-17">
       <description>
         <p>Clean View is now called Presentation View. It works as before: F8, the View menu, or its button at the right end of the toolbar.</p>
