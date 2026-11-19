@@ -1,7 +1,7 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
   <defs>
     <linearGradient id="kosmos" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0.15" stop-color="#6aaabd"/><stop offset="0.85" stop-color="#e2b461"/>
+      <stop offset="0.15" stop-color="#a12a2e"/><stop offset="0.85" stop-color="#a12a2e"/>
     </linearGradient>
   </defs>
   <g transform="translate(0.8 0.8) scale(10.6)" stroke-linecap="round" stroke-linejoin="round">

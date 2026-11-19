@@ -1,8 +1,8 @@
 """Generate the Kosmos PDF app icon (SVG plus PNGs) into kosmospdf/icons/app/.
 
-A document page (Lucide's file shape, with its cut corner but no fold) in a deepened
-version of the kosmos.law frost-to-amber gradient, carrying the three text lines of
-Lucide's file-text icon in white. Plain strokes, rather than a logo or lettering, stay
+A document page (Lucide's file shape, with its cut corner but no fold) in a solid dark
+red, carrying the three text lines of Lucide's file-text icon in white. (Kosmos Writer
+has the same page in solid blue.) Plain strokes, rather than a logo or lettering, stay
 recognisable down to panel size. A faint dark edge and a soft drop shadow hold the
 page on light and dark panels.
 
@@ -19,9 +19,9 @@ from PySide6.QtGui import QGuiApplication, QImage, QPainter
 from PySide6.QtSvg import QSvgRenderer
 
 OUT = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "kosmospdf", "icons", "app")
-# Kosmos palette (kosmos.law): night for ink; frost and amber, deepened so the page
-# holds its own on light panels.
-NIGHT, FROST, AMBER = "#2e3440", "#6aaabd", "#e2b461"
+# Night (kosmos.law) for the page's faint edge; the page itself is one solid colour.
+NIGHT = "#2e3440"
+RED = "#a12a2e"                                  # Kosmos PDF: dark red
 DEV_LIGHT, DEV_DARK = "#8c96a8", "#c3c9d4"      # slate greys for the development copy
 
 # Lucide file page in its 24-unit grid (stroked 2 units wide, so it reaches 1 unit beyond).
@@ -60,7 +60,7 @@ def shadow():
                    f'stroke="#000" stroke-opacity="{alpha}" stroke-width="{width}"/>' for width, alpha in rings)
 
 
-def svg(start=FROST, end=AMBER, size=None):
+def svg(start=RED, end=RED, size=None):
     """The icon; with `size`, tuned for a PNG of that many pixels (see lines())."""
     scale = SCALE
     tx, ty = OFFSET, OFFSET
@@ -83,7 +83,7 @@ def svg(start=FROST, end=AMBER, size=None):
 def main():
     QGuiApplication(sys.argv)
     os.makedirs(OUT, exist_ok=True)
-    for name, colours in (("kosmospdf", (FROST, AMBER)), ("kosmospdf-dev", (DEV_LIGHT, DEV_DARK))):
+    for name, colours in (("kosmospdf", (RED, RED)), ("kosmospdf-dev", (DEV_LIGHT, DEV_DARK))):
         with open(os.path.join(OUT, f"{name}.svg"), "w") as f:
             f.write(svg(*colours))
         for size in (16, 24, 32, 48, 64, 128, 256):
