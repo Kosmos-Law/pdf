@@ -39,6 +39,11 @@
     <color type="primary" scheme_preference="dark">#2e3440</color>
   </branding>
   <releases>
+    <release version="0.6.0" date="2026-11-24">
+      <description>
+        <p>The menu has moved to the left end of the toolbar and has a new form: a panel with a search box that finds any command by a few letters, and sections (File, Open Recent, Edit, View, Pages, Tools) that each open beside it. Preferences, Check for Updates and About are at its foot. F10 opens it as before, and every keyboard shortcut is unchanged.</p>
+      </description>
+    </release>
     <release version="0.5.4" date="2026-11-19">
       <description>
         <p>A new icon: the same page, now in solid dark red.</p>
