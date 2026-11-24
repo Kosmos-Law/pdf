@@ -12,7 +12,7 @@ handles it), or run:
     flatpak install --user https://kosmos.law/flatpak/kosmospdf.flatpakref
 
 This installs the app and subscribes to the Kosmos repository. To update, choose
-Help > Check for Updates in the app (Flatpak asks your leave the first time), or run
+Check for Updates at the foot of the menu in the app (Flatpak asks your leave the first time), or run
 `flatpak update --user law.kosmos.KosmosPDF`. A software updater that handles per-user
 Flatpaks brings updates in as well; Linux Mint's Update Manager doesn't, since it
 looks only at Flatpaks installed for the whole system. If it's your first per-user Flatpak app and it doesn't

@@ -23,7 +23,7 @@ Downloads for both systems are at https://kosmos.law/pdf/.
 [latest release](https://github.com/Kosmos-Law/pdf/releases/latest). It installs for
 the current user, OCR and PDF/A included; see `packaging/windows/README.md`.
 
-**Updating:** Help > Check for Updates. The Flatpak installs the new version itself
+**Updating:** Check for Updates, at the foot of the menu. The Flatpak installs the new version itself
 (Flatpak asks your leave the first time); on Windows it offers the new installer. The
 app looks for updates only when asked.
 
@@ -58,8 +58,10 @@ From the Menu (Office), or:
 
     kosmospdf [files...]
 
-The menus (File, Edit, View, Pages, Tools, Help) are behind the ☰ button at the
-right of the toolbar, or F10; every keyboard shortcut works without opening them.
+The menu is behind the ☰ button at the left of the toolbar, or F10: a panel with a search
+box that finds any command, sections (File, Open Recent, Edit, View, Pages, Tools) that
+each open a panel beside it, and Preferences, Check for Updates and About at its foot.
+Every keyboard shortcut works without opening it.
 In a window too narrow for the whole toolbar, its buttons drop out from the right
 (the ☰ button always stays) and come back when the window is widened.
 

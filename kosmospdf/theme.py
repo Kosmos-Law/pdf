@@ -373,6 +373,8 @@ QMenuBar {{ background:{c.window.name()}; }}
 QMenuBar::item {{ padding:4px 9px; border-radius:4px; background:transparent; }}
 QMenuBar::item:selected {{ background:{hover}; }}
 QMenu {{ background:{c.field.name()}; border:1px solid {c.line.name()}; padding:4px; }}
+QFrame#menuPanel {{ background:{c.panel.name()}; border:1px solid {c.line.name()}; border-radius:8px; }}
+QFrame#menuPanel QScrollArea, QFrame#menuPanel QScrollArea > QWidget, QFrame#menuPanel QScrollArea > QWidget > QWidget {{ background:transparent; }}
 QMenu::item {{ padding:5px 26px 5px 10px; border-radius:4px; }}
 QMenu::item:selected {{ background:{c.rgba(c.accent, 60)}; color:{t.name()}; }}
 QMenu::item:disabled {{ color:{c.rgba(t, 100)}; }}

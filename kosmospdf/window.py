@@ -19,6 +19,7 @@ from .core import (MIME_PAGES, MIME_TAB, REDACT_STYLES, PdfDocument, is_image, l
                    pages_mime)
 from .pageview import HIGHLIGHT_COLORS, PageView
 from . import theme
+from .menupanel import MenuPanel
 from .theme import Colors, lucide, stylesheet, swatch
 from .thumbs import ThumbPane
 
@@ -76,10 +77,10 @@ TOOLBAR_MEMBERS = {"thumbs": ["thumbs"], "clean": ["clean"], "open": ["open"], "
 
 class MainToolBar(QToolBar):
     """The main toolbar. When the window is too narrow for all of it, Qt leaves out the
-    items that don't fit, starting from the right. The menu button must never go, so it
-    stands at the right edge outside the toolbar's layout, in room kept for it there, and
-    so does the Presentation View button while it is the toolbar's last item (see
-    MainWindow.apply_toolbar). The » button Qt would offer for the items left out is not shown."""
+    items that don't fit, starting from the right. The menu button is the first item, at
+    the left, so it never goes. The Presentation View button, while it is the toolbar's
+    last item, stands at the right edge outside the toolbar's layout, in room kept for it
+    there, so that it stays too (see MainWindow.apply_toolbar). The » button Qt would offer for the items left out is not shown."""
 
     def __init__(self, title, *pinned):
         super().__init__(title)
@@ -706,7 +707,7 @@ class MainWindow(QMainWindow):
         A("preferences", "Pre&ferences…", self.preferences, QKeySequence.Preferences)
         A("updates", "Check for &Updates…", self.check_for_updates)
         A("about", "&About Kosmos PDF", self.about)
-        A("menu", "Menu", lambda: (self.clean_menu_button if self.clean_view else self.menu_button).showMenu(), "F10")
+        A("menu", "Menu", lambda: self.toggle_menu(not self.menu_panel.isVisible()), "F10")
 
         self.mode_group = QActionGroup(self)
         for name, text, key, tip in (
@@ -728,48 +729,93 @@ class MainWindow(QMainWindow):
         self.actions_by_name[f"mode_{self.mode}"].setChecked(True)
 
     def build_menus(self):
-        """The menus, gathered behind the menu button at the right of the toolbar (or F10)
-        rather than in a menu bar."""
+        """The menu: a panel laid over the window under the menu button at the left of the
+        toolbar (or F10), with a subpanel beside it for each section (menupanel.py), rather
+        than a menu bar. What it holds is read each time it is laid out (menu_contents)."""
         a = self.actions_by_name
-        mb = self.main_menu = QMenu(self)
-
-        def menu(title, names):
-            m = mb.addMenu(title)
-            for n in names:
-                m.addSeparator() if n is None else m.addAction(a[n])
-            return m
-
-        file_menu = menu("&File", ["open"])
-        self.recent_menu = file_menu.addMenu("Open &Recent")
-        self.recent_menu.aboutToShow.connect(lambda: self.fill_recent_menu())
-        for n in ("save", "save_as", None, "print", None, "combine", "images", None, "new_window", "close_tab", "quit"):
-            file_menu.addSeparator() if n is None else file_menu.addAction(a[n])
-        menu("&Edit", ["undo", "redo", None, "cut", "copy", "paste", "select_all", None, "find", "find_next", "find_prev",
-                        None, "preferences"])
-        menu("&View", ["zoom_in", "zoom_out", "fit_width", "fit_page", "actual", None, "thumbs", "clean"])
-        menu("&Pages", ["rotate_left", "rotate_right", "rotate_180", None, "cut_pages", "copy_pages", "paste_pages",
-                        "delete_pages", None, "extract", "insert_blank", "insert_file", "select_all_pages"])
-        menu("&Tools", ["mode_hand", "mode_select", "mode_highlight", "mode_typewriter", "mode_label", "mode_redact", None,
-                        "bates", "bates_files", "label_files", "ocr", "pdfa", "flatten"])
-        menu("&Help", ["updates", None, "about"])
-        # Qt hears a menu item's shortcut only while its menu is in reach; with no menu bar,
-        # the window has to hold every action itself for Ctrl+S, F3 and the rest to work.
+        self.menu_panel = MenuPanel(self.menu_contents, self)
+        self.menu_panel.closed.connect(self._menu_closed)
+        self._recent_shown, self._recent_rows = None, []
+        self.clear_recent_action = QAction("Clear Recent Documents", self)
+        self.clear_recent_action.triggered.connect(self.clear_recent)
+        self.no_recent_action = QAction("No recent documents", self)
+        self.no_recent_action.setEnabled(False)
+        # Qt hears an action's shortcut only while something showing holds it; with no menu
+        # bar, the window has to hold every action itself for Ctrl+S, F3 and the rest to work.
         self.addActions(list(a.values()))
+
+    MENU = (("File", ("open", None, "save", "save_as", None, "print", None, "combine", "images", None,
+                      "new_window", "close_tab", "quit")),
+            ("Open Recent", ()),
+            ("Edit", ("undo", "redo", None, "cut", "copy", "paste", "select_all", None, "find", "find_next", "find_prev")),
+            ("View", ("zoom_in", "zoom_out", "fit_width", "fit_page", "actual", None, "thumbs", "clean")),
+            ("Pages", ("rotate_left", "rotate_right", "rotate_180", None, "cut_pages", "copy_pages", "paste_pages",
+                       "delete_pages", None, "extract", "insert_blank", "insert_file", "select_all_pages")),
+            ("Tools", ("mode_hand", "mode_select", "mode_highlight", "mode_typewriter", "mode_label", "mode_redact", None,
+                       "bates", "bates_files", "label_files", "ocr", "pdfa", "flatten")))
+    MENU_FOOT = ("preferences", "updates", "about")
+
+    def menu_contents(self):
+        """(top, sections, bottom) for the menu panel: nothing loose at the top, the sections
+        that open beside it, and Preferences, Check for Updates and About at the foot."""
+        a = self.actions_by_name
+        acts = lambda names: [None if n is None else a[n] for n in names]
+        sections = [(title, self.recent_rows() if title == "Open Recent" else acts(names)) for title, names in self.MENU]
+        return [], sections, acts(self.MENU_FOOT)
+
+    def menu_actions(self, title):
+        """The commands of one section of the menu, in order (no dividers)."""
+        return [item[0] if isinstance(item, tuple) else item for item in dict(self.menu_contents()[1])[title] if item is not None]
+
+    def recent_rows(self):
+        """The recent documents as the menu's rows: (command, its folder), then Clear. Made
+        again only when the list changes, since the panel's rows hold them."""
+        files = recent_files()
+        state = [(path, os.path.exists(path)) for path in files]
+        if state != self._recent_shown:
+            for act, _ in self._recent_rows:
+                act.deleteLater()
+            self._recent_shown, self._recent_rows = state, []
+            for path, there in state:
+                act = QAction(os.path.basename(path).replace("&", "&&"), self)
+                act.setToolTip(path)
+                act.setEnabled(there)
+                act.triggered.connect(lambda _=False, path=path: self.open_files([path]))
+                self._recent_rows.append((act, short_folder(path) if there else "not found"))
+        if not self._recent_rows:
+            return [self.no_recent_action]
+        return list(self._recent_rows) + [None, self.clear_recent_action]
+
+    def show_menu(self):
+        """F10 or the button: the menu under its button, with the caret in its search box."""
+        button = self.clean_menu_button if self.clean_view else self.menu_button
+        self.menu_panel.popup(button.mapTo(self, QPoint(0, button.height() + 2)))
+        button.setChecked(True)
+
+    def toggle_menu(self, on):
+        self.show_menu() if on else self.menu_panel.close_menu()
+
+    def _menu_closed(self):
+        for button in (self.menu_button, self.clean_menu_button):
+            button.setChecked(False)
+        if self.tab and QApplication.activeWindow() is self:
+            self.tab.view.setFocus()
 
     def build_toolbar(self):
         a = self.actions_by_name
         button = self.menu_button = QToolButton()
         button.setObjectName("menuButton")
         button.setToolTip("Menu (F10)")
-        button.setMenu(self.main_menu)
-        button.setPopupMode(QToolButton.InstantPopup)
-        # Presentation View's button for the right end, beside the menu button, where the way back
-        # from Presentation View is too (on the tab bar): the two are the one button, on and off.
+        button.setCheckable(True)
+        button.setFocusPolicy(Qt.NoFocus)
+        button.clicked.connect(self.toggle_menu)
+        # Presentation View's button for the right end, where the way back from Presentation
+        # View is too (on the tab bar): the two are the one button, on and off.
         clean = self.clean_pinned = QToolButton()
         clean.setDefaultAction(a["clean"])
         clean.setAutoRaise(True)
         clean.setFocusPolicy(Qt.NoFocus)
-        tb = self.toolbar = MainToolBar("Main", button, clean)
+        tb = self.toolbar = MainToolBar("Main", clean)
         clean.setIconSize(QSize(theme.TOOLBAR_ICON, theme.TOOLBAR_ICON))
         tb.setMovable(False)
         tb.setIconSize(QSize(theme.TOOLBAR_ICON, theme.TOOLBAR_ICON))
@@ -795,7 +841,7 @@ class MainWindow(QMainWindow):
         # the toolbar makes itself, with addWidget, it deletes, widget and all, when they are
         # taken off; these can come off and go back on as the toolbar is rearranged.)
         self._toolbar_widgets = {}
-        for name, widget in (("page_box", self.page_box), ("page_total", self.page_total), ("zoom_box", self.zoom_box),
+        for name, widget in (("menu", button), ("page_box", self.page_box), ("page_total", self.page_total), ("zoom_box", self.zoom_box),
                              ("highlight_button", colors), ("font_size", self.font_size)):
             wa = self._toolbar_widgets[name] = QWidgetAction(self)
             wa.setDefaultWidget(widget)
@@ -808,8 +854,8 @@ class MainWindow(QMainWindow):
         self.findbar.visibilityChanged.connect(a["find_bar"].setChecked)
         # In Presentation View the toolbar is gone, and the tab bar stands in for its two ends. At
         # the right, as on the toolbar: Presentation View's button (the same icon, shown pressed,
-        # since it is on), which is the way back that can be seen (F8 is the other), and the
-        # menu button. At the left, where the toolbar has them, the two things wanted while
+        # since it is on), which is the way back that can be seen (F8 is the other). At the
+        # left, where the toolbar has them, the menu button and the two things wanted while
         # showing documents: the page panel, to move about in one, and Open, for the next.
         # Their buttons are smaller than the toolbar's, to sit easily in the tab bar's height.
         self.clean_view = False
@@ -831,13 +877,14 @@ class MainWindow(QMainWindow):
         menu = self.clean_menu_button = corner(QToolButton())
         menu.setObjectName("menuButton")
         menu.setToolTip("Menu (F10)")
-        menu.setMenu(self.main_menu)
-        menu.setPopupMode(QToolButton.InstantPopup)
+        menu.setCheckable(True)
+        menu.clicked.connect(self.toggle_menu)
+        self.menu_panel.keep = {self.menu_button, menu}
         panel, opener = corner(QToolButton(), a["thumbs"]), corner(QToolButton(), a["open"])
         opener.setMenu(self.open_recent_menu)                 # Open, with its arrow for the recent files
         opener.setPopupMode(QToolButton.MenuButtonPopup)
-        for name, buttons, where in (("clean_right", (back, menu), Qt.TopRightCorner),
-                                     ("clean_left", (panel, opener), Qt.TopLeftCorner)):
+        for name, buttons, where in (("clean_right", (back,), Qt.TopRightCorner),
+                                     ("clean_left", (menu, panel, opener), Qt.TopLeftCorner)):
             holder = QWidget()
             row = QHBoxLayout(holder)
             row.setContentsMargins(6, 0, 6, 0)        # (and room below: see set_clean_view)
@@ -861,11 +908,13 @@ class MainWindow(QMainWindow):
             if act.isSeparator():
                 act.deleteLater()
         layout = dialogs.tidy_dividers(dialogs.toolbar_layout())
-        # Presentation View as the last item (as it is to begin with) stands at the right end with
-        # the menu button, where a narrow window can't push it out; anywhere else, it is a
-        # button like the rest.
+        # The menu button is always first, at the left end, where a narrow window never
+        # pushes it out. Presentation View as the last item (as it is to begin with) stands
+        # at the right end, where a narrow window can't push it out either; anywhere else,
+        # it is a button like the rest.
         at_end = layout[-1:] == ["clean"]
         self.clean_pinned.setVisible(at_end)
+        tb.addAction(self._toolbar_widgets["menu"])
         for key in dialogs.tidy_dividers(layout[:-1]) if at_end else layout:
             if key == dialogs.DIVIDER:
                 tb.addSeparator()
@@ -1427,8 +1476,9 @@ class MainWindow(QMainWindow):
 
     def fill_recent_menu(self, m=None):
         """Rebuilt each time it opens, so every window shows the same, current list. It fills
-        File > Open Recent, or another menu (the Open button's arrow) when one is given."""
-        m = m or self.recent_menu
+        the Open button's arrow, or another menu when one is given. (The menu panel's Open
+        Recent section is recent_rows.)"""
+        m = m or self.open_recent_menu
         m.clear()
         files = recent_files()
         if not files:

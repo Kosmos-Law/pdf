@@ -1,4 +1,4 @@
-"""Help > Check for Updates.
+"""Check for Updates, at the foot of the menu.
 
 Inside the Flatpak the app has no network access of its own, so it asks Flatpak, through
 its portal, to look for a newer version and install it. Anywhere else it reads the number

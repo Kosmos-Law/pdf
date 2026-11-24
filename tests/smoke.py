@@ -4,6 +4,7 @@ QT_QPA_PLATFORM=offscreen .venv/bin/python tests/smoke.py OUTDIR
 import os
 import shutil
 import sys
+import time
 
 import pymupdf as fitz
 from PySide6.QtCore import QEvent, QPoint, QPointF, QSize, Qt, QTimer
@@ -75,6 +76,12 @@ def mouse(w, kind, pos, buttons=Qt.LeftButton):
 def pump(n=20):
     for _ in range(n):
         app.processEvents()
+
+
+def settle(ms=400):
+    end = time.monotonic() + ms / 1000
+    while time.monotonic() < end:
+        pump(5); time.sleep(0.01)
 
 
 def click_menu_item(button, label):
@@ -392,14 +399,54 @@ check("a mark is drawn lightly: a faint mauve outline, no cross", mark.colors["s
       and all(abs(a - b) < 0.01 for a, b in zip(mark.colors["stroke"], REDACT_MARK)) and mark.opacity < 0.5,
       f"{mark.colors} {mark.opacity}")
 from PySide6.QtWidgets import QMenuBar  # noqa: E402
-check("the menus live behind a menu button at the right end of the toolbar, not in a menu bar",
-      not w.findChildren(QMenuBar) and w.menu_button.parent() is w.toolbar and w.menu_button.isVisible()
-      and w.menu_button.geometry().right() > w.toolbar.width() - 12
-      and w.menu_button.geometry().left() > max(w.toolbar.widgetForAction(x).geometry().right()
-                                                for x in w.toolbar.actions() if x.isVisible())
-      and w.menu_button.menu() is w.main_menu
-      and [m.text() for m in w.main_menu.actions()] == ["&File", "&Edit", "&View", "&Pages", "&Tools", "&Help"],
-      str([m.text() for m in w.main_menu.actions()]))
+_all_menu = lambda: [x for title, _ in w.MENU for x in w.menu_actions(title)]
+check("the menu is behind a menu button at the left end of the toolbar, not in a menu bar",
+      not w.findChildren(QMenuBar) and w.menu_button.isVisible() and w.toolbar.isAncestorOf(w.menu_button)
+      and w.menu_button.mapTo(w.toolbar, QPoint(0, 0)).x() < 12
+      and w.toolbar.actions()[0] is w._toolbar_widgets["menu"]
+      and [title for title, _ in w.menu_contents()[1]] == ["File", "Open Recent", "Edit", "View", "Pages", "Tools"]
+      and w.menu_contents()[2] == [w.actions_by_name[n] for n in ("preferences", "updates", "about")],
+      f"{w.menu_button.mapTo(w.toolbar, QPoint(0, 0)).x()} {[title for title, _ in w.menu_contents()[1]]}")
+# The menu is a panel laid over the window, with a subpanel beside it for each section.
+_panel, _sub = w.menu_panel, w.menu_panel.sub
+w.activateWindow(); settle(100)
+w.actions_by_name["menu"].trigger(); settle(300)
+_rows = lambda: [r.label() for r in _panel.rows]
+check("F10 opens the menu under its button, the caret in its search box, with the sections and no subpanel yet",
+      _panel.isVisible() and _panel.search.hasFocus() and w.menu_button.isChecked() and not _sub.isVisible()
+      and _panel.parentWidget() is w and _panel.x() < 20 and _panel.y() >= w.menu_button.mapTo(w, QPoint(0, 0)).y() + w.menu_button.height()
+      and [r.section for r in _panel.rows if r.section] == ["File", "Open Recent", "Edit", "View", "Pages", "Tools"]
+      and "Preferences…" in _rows() and "About Kosmos PDF" in _rows(), f"{_panel.geometry()} {_rows()}")
+QTest.mouseClick(next(r for r in _panel.rows if r.section == "Pages"), Qt.LeftButton); settle(200)
+check("a click on a section opens its subpanel beside it",
+      _sub.isVisible() and _sub.x() > _panel.geometry().right() and _panel.sub_section == "Pages"
+      and w.actions_by_name["rotate_left"] in [r.action for r in _sub.list.rows] and w.rect().contains(_sub.geometry()),
+      str(_sub.geometry()))
+w.grab().save(os.path.join(work, "menu-pages.png"))
+QTest.keyClick(_panel.search, Qt.Key_Escape); settle(100)
+_closed_sub = _panel.isVisible() and not _sub.isVisible()
+QTest.keyClick(_panel.search, Qt.Key_Right); settle(100)
+check("Escape closes the subpanel first, and Right opens it again with the keys on its first command",
+      _closed_sub and _sub.isVisible() and _sub.list.current.action is w.actions_by_name["rotate_left"])
+QTest.keyClick(_panel.search, Qt.Key_Left); settle(100)
+QTest.keyClicks(_panel.search, "rotate"); settle(200)
+check("typing finds commands in any section, in the panel itself",
+      not _sub.isVisible() and len(_rows()) == 3 and all("Rotate" in x for x in _rows())
+      and {r.hint for r in _panel.rows} == {"Pages"}, str(_rows()))
+QTest.keyClick(_panel.search, Qt.Key_Escape); QTest.keyClick(_panel.search, Qt.Key_Escape); settle(200)
+check("Escape clears the search and then closes the menu, and the keys go back to the page",
+      not _panel.isVisible() and not w.menu_button.isChecked() and w.tab.view.hasFocus())
+QTest.mouseMove(w.menu_button); QTest.mouseClick(w.menu_button, Qt.LeftButton); settle(200)
+_opened = _panel.isVisible() and w.menu_button.isChecked()
+QTest.mouseClick(w.tab.view.viewport(), Qt.LeftButton, Qt.NoModifier, QPoint(w.tab.view.viewport().width() - 30, 30)); settle(200)
+check("the button opens it, and a click anywhere else closes it", _opened and not _panel.isVisible() and not w.menu_button.isChecked())
+w.actions_by_name["menu"].trigger(); settle(200)
+_had_panel = w.actions_by_name["thumbs"].isChecked()
+QTest.keyClicks(_panel.search, w.actions_by_name["thumbs"].text().replace("&", "")); settle(200)
+QTest.keyClick(_panel.search, Qt.Key_Return); settle(200)
+check("Enter runs the command found, and the menu closes",
+      not _panel.isVisible() and w.actions_by_name["thumbs"].isChecked() != _had_panel, str(_rows()))
+w.actions_by_name["thumbs"].trigger(); pump()
 check("Print sits on the toolbar, just right of Save, and is the File menu's Print",
       tb_actions[tb_actions.index(w.actions_by_name["save"]) + 1] is w.actions_by_name["print"]
       and not w.toolbar.widgetForAction(w.actions_by_name["print"]).icon().isNull())
@@ -410,22 +457,20 @@ check("a window as wide as the toolbar shows all of it", not w.toolbar.hidden_ac
 w.resize(700, _size.height()); pump()
 _shown = [x for x in w.toolbar.actions() if x.isVisible()]
 _gone = w.toolbar.hidden_actions()
-check("a narrow window leaves toolbar items out from the right, and never the menu button",
+check("a narrow window leaves toolbar items out from the right, and never the menu button at the left",
       _gone and _gone == _shown[-len(_gone):] and w.actions_by_name["mode_label"] in _gone
       and w.actions_by_name["open"] not in _gone and w.menu_button.isVisible()
-      and w.menu_button.geometry().right() > w.toolbar.width() - 12 and w.toolbar.width() <= 700
-      and all(w.toolbar.widgetForAction(x).geometry().right() < w.menu_button.geometry().left()
-              for x in _shown if x not in _gone),
+      and w.menu_button.mapTo(w.toolbar, QPoint(0, 0)).x() < 12 and w.toolbar.width() <= 700,
       f"{len(_gone)} of {len(_shown)} left out, menu at {w.menu_button.geometry()}")
 w.resize(w.toolbar.sizeHint().width(), _size.height()); pump()
 check("widening the window brings them back", not w.toolbar.hidden_actions())
 w.resize(_size); pump()
 check("every action stays with the window, so its shortcut works without a menu bar",
       all(act in w.actions() for act in w.actions_by_name.values()))
-tools_menu = next(m for m in w.main_menu.findChildren(QMenu) if m.title() == "&Tools")
+tools_menu = w.menu_actions("Tools")
 check("the Tools menu keeps only Redact for redaction",
-      w.actions_by_name["mode_redact"] in tools_menu.actions()
-      and not {w.actions_by_name[n] for n in ("redact_search", "apply_redactions")} & set(tools_menu.actions())
+      w.actions_by_name["mode_redact"] in tools_menu
+      and not {w.actions_by_name[n] for n in ("redact_search", "apply_redactions")} & set(tools_menu)
       and w.actions_by_name["redact_search"] in w.redact_bar.actions()
       and w.actions_by_name["redact_search"].text() == "Search…")
 # Part of one line and on into the next, in one drag.
@@ -893,24 +938,31 @@ extra = os.path.join(work, "extra.pdf")
 shutil.copy(os.path.join(work, "second.pdf"), extra)
 window.remember_recent(extra)
 window.remember_recent(os.path.join(work, "gone.pdf"))
-w.fill_recent_menu()
-acts = [a for a in w.recent_menu.actions() if a.text()]
-check("missing files are greyed out as not found", acts[0].text().endswith("not found") and not acts[0].isEnabled())
-check("entries show the file name and folder", acts[1].text().startswith("&2  extra.pdf\t") and acts[1].isEnabled(), acts[1].text())
+acts = [item for item in w.recent_rows() if isinstance(item, tuple)]
+check("missing files are greyed out as not found", acts[0][1] == "not found" and not acts[0][0].isEnabled())
+check("entries show the file name and folder", acts[1][0].text() == "extra.pdf" and acts[1][1] == window.short_folder(extra)
+      and acts[1][0].isEnabled(), f"{acts[1][0].text()} {acts[1][1]}")
+check("the menu's Open Recent section holds them, and Clear at its end",
+      w.menu_actions("Open Recent")[:2] == [acts[0][0], acts[1][0]] and w.menu_actions("Open Recent")[-1] is w.clear_recent_action)
+acts = [x for x, _ in acts]
 n_tabs = w.tabs.count()
 acts[1].trigger(); pump()
 check("choosing a recent file opens it", w.tabs.count() == n_tabs + 1 and w.tab.pdoc.path == extra)
 w.close_tab(w.tab)
-w.fill_recent_menu(); w.fill_recent_menu(w.open_recent_menu)
-check("the Open button's arrow lists the same recent files",
+w.fill_recent_menu()
+_listed = [x for x in w.open_recent_menu.actions() if x.toolTip() and not x.text().startswith("Clear")]
+check("the Open button's arrow lists the same recent files, by name and folder",
       w.open_button.popupMode() == QToolButton.MenuButtonPopup and w.open_button.menu() is w.open_recent_menu
-      and [x.text() for x in w.open_recent_menu.actions()] == [x.text() for x in w.recent_menu.actions()])
+      and [x.toolTip() for x in _listed] == window.recent_files()
+      and any(x.text().startswith("&1  extra.pdf\t") for x in _listed)
+      and [x.text().endswith("not found") for x in _listed if "gone.pdf" in x.text()] == [True], str([x.text() for x in _listed]))
 [x for x in w.open_recent_menu.actions() if x.toolTip() == extra][0].trigger(); pump()
 check("and choosing one there opens it", w.tabs.count() == n_tabs + 1 and w.tab.pdoc.path == extra)
 w.close_tab(w.tab)
-[a for a in w.recent_menu.actions() if a.text().startswith("Clear")][0].trigger()
+w.clear_recent_action.trigger()
 w.fill_recent_menu()
-check("Clear empties the list", window.recent_files() == [] and not w.recent_menu.actions()[0].isEnabled())
+check("Clear empties the list", window.recent_files() == [] and not w.open_recent_menu.actions()[0].isEnabled()
+      and [x.isEnabled() for x in w.menu_actions("Open Recent")] == [False])
 
 # --- dark-mode fallback (for Flatpak, when the desktop theme isn't visible) --------------------------------------
 from PySide6.QtGui import QColor, QPalette as _QP  # noqa: E402
@@ -1045,12 +1097,6 @@ import time  # noqa: E402
 from kosmospdf.pageview import find_in_chars, search_pattern  # noqa: E402
 
 
-def settle(ms=400):
-    end = time.monotonic() + ms / 1000
-    while time.monotonic() < end:
-        pump(5); time.sleep(0.01)
-
-
 ft = w.add_doc(PdfDocument(fitz.open(os.path.join(SAMPLES, "sample.pdf")), title="find.pdf"))
 fb = w.findbar
 settle(100)
@@ -1123,8 +1169,8 @@ pump()
 # --- the page panel folds away ------------------------------------------------------------------------------------
 w.tabs.setCurrentWidget(t); pump()
 pbtn = w.toolbar.widgetForAction(w.actions_by_name["thumbs"])
-check("page panel button comes first on the toolbar, pressed while the panel shows",
-      w.toolbar.actions()[0] is w.actions_by_name["thumbs"] and pbtn.isChecked() and t.thumbs.isVisible())
+check("page panel button comes first on the toolbar after the menu button, pressed while the panel shows",
+      w.toolbar.actions()[1] is w.actions_by_name["thumbs"] and pbtn.isChecked() and t.thumbs.isVisible())
 total = sum(t.splitter.sizes())
 t.splitter.setSizes([240, total - 240]); t.splitter.splitterMoved.emit(240, 1); pump()
 QTest.mouseClick(pbtn, Qt.LeftButton); pump()
@@ -1243,7 +1289,7 @@ from kosmospdf import labels  # noqa: E402
 check("Label sits on the toolbar beside the typewriter, in the Tools menu, and L is its key",
       w.actions_by_name["mode_label"] in on_toolbar | {b.defaultAction() for b in w.toolbar.findChildren(QToolButton)}
       and w.actions_by_name["mode_label"].shortcut().toString() == "L"
-      and w.actions_by_name["mode_label"] in [a for m in w.main_menu.actions() for a in (m.menu().actions() if m.menu() else [])])
+      and w.actions_by_name["mode_label"] in w.menu_actions("Tools"))
 check("designations follow on: 3 -> 4, A -> B, Z -> AA, 12-A -> 12-B",
       [labels.next_designation(x) for x in ("3", "A", "Z", "12-A", "09")] == ["4", "B", "AA", "12-B", "10"])
 w.tabs.setCurrentWidget(t); pump()
@@ -1407,8 +1453,8 @@ w.set_mode("select")
 
 # --- Label Exhibit Files: a set of files labelled in order, and renumbered on the fly --------------------------
 check("Label Exhibit Files sits in the Tools menu after Bates Number Files",
-      "label_files" in w.actions_by_name and w.actions_by_name["label_files"] in
-      [a for m in w.main_menu.actions() for a in (m.menu().actions() if m.menu() else [])])
+      "label_files" in w.actions_by_name and w.menu_actions("Tools").index(w.actions_by_name["label_files"])
+      == w.menu_actions("Tools").index(w.actions_by_name["bates_files"]) + 1)
 check("file names get the designation, replacing one they already carry, and leave dates alone",
       labels.exhibit_name("/x/Contract.pdf", "3") == "Exhibit 3 - Contract.pdf"
       and labels.exhibit_name("/x/Exhibit 7 - Contract.pdf", "3") == "Exhibit 3 - Contract.pdf"
@@ -1612,7 +1658,7 @@ pdf_printer.setOutputFileName(printed)
 real_print_exec, real_box_exec = QPrintDialog.exec, QMessageBox.exec
 QPrintDialog.exec = lambda self: QPrintDialog.Accepted
 check("File has Print…, on Ctrl+P", w.actions_by_name["print"].shortcut().matches(QKeySequence("Ctrl+P"))
-      and any(a.text() == "&Print…" for m in w.main_menu.actions() if m.menu() for a in m.menu().actions()))
+      and any(a.text() == "&Print…" for a in w.menu_actions("File")))
 t.thumbs.clearSelection()
 from PySide6.QtWidgets import QPushButton, QWidget  # noqa: E402
 seen = {}
@@ -1704,10 +1750,9 @@ def new_tab_zoom():
     return got
 
 
-_edit = next(m_.menu() for m_ in w.main_menu.actions() if m_.text() == "&Edit")
 _empty = window.MainWindow(); _empty.show(); pump()
-check("Preferences is in the Edit menu, and can be used with no file open",
-      w.actions_by_name["preferences"] in _edit.actions() and _empty.actions_by_name["preferences"].isEnabled()
+check("Preferences is at the foot of the menu, and can be used with no file open",
+      w.actions_by_name["preferences"] in w.menu_contents()[2] and _empty.actions_by_name["preferences"].isEnabled()
       and not _empty.actions_by_name["save"].isEnabled())
 _empty.close(); pump()
 check("a file opens at Fit width until a zoom is chosen", new_tab_zoom()[0] == "width", str(new_tab_zoom()))
@@ -1783,18 +1828,17 @@ for _k in ("window/size", "window/maximized"):
 
 # --- Presentation View: the document alone, for a shared screen -----------------------------------------------------------
 w.tabs.setCurrentWidget(t); w.set_thumbs(True); w.findbar.open_bar(); pump()
-_view = next(m_.menu() for m_ in w.main_menu.actions() if m_.text() == "&View")
+_view = w.menu_actions("View")
 _cb = w.clean_pinned
 _narrow = w.size()
 w.resize(700, _narrow.height()); pump()
 _stays = (_cb.isVisible() and w.menu_button.isVisible() and bool(w.toolbar.hidden_actions())
-          and _cb.geometry().right() < w.menu_button.geometry().left()
           and all(w.toolbar.widgetForAction(x).geometry().right() < _cb.geometry().left()
                   for x in w.toolbar.actions() if x.isVisible() and x not in w.toolbar.hidden_actions()))
 w.resize(_narrow); pump()
-check("Presentation View has a button at the right end of the toolbar, beside the menu button, and a narrow window keeps both",
+check("Presentation View has a button at the right end of the toolbar, and a narrow window keeps it and the menu button",
       _stays and _cb.defaultAction() is w.actions_by_name["clean"] and not _cb.icon().isNull() and not _cb.isChecked()
-      and _cb.geometry().right() < w.menu_button.geometry().left() and _cb.geometry().left() > w.toolbar.width() - 90,
+      and _cb.geometry().right() > w.toolbar.width() - 12 and _cb.geometry().left() > w.toolbar.width() - 60,
       f"{_stays} {_cb.geometry()} {w.menu_button.geometry()}")
 _cb.click(); pump()
 _on = not w.toolbar.isVisible() and w.clean_view
@@ -1803,7 +1847,7 @@ check("the button turns Presentation View on, and the one on the tab bar turns i
       and not w.clean_view)
 w.findbar.open_bar(); pump()
 check("Presentation View is in the View menu, and the way back is not shown until it is on",
-      w.actions_by_name["clean"] in _view.actions() and not w.clean_right.isVisible())
+      w.actions_by_name["clean"] in _view and not w.clean_right.isVisible())
 w.activateWindow(); settle(100)
 QTest.keyClick(w, Qt.Key_F8); pump()
 check("F8 hides the toolbar, find bar, page panel and status bar, and leaves the tabs and the page",
@@ -1823,10 +1867,13 @@ check("at the left end of the tabs are the page panel's button and Open, with it
       and w.clean_left.mapTo(w, QPoint(0, 0)).x() < 10 and w.tabs.tabBar().mapTo(w, QPoint(0, 0)).x() >= w.clean_left.width()
       and _ob.menu() is w.open_recent_menu and not _pb.icon().isNull() and not _pb.isChecked())
 _cm = w.clean_menu_button
-check("the menu button is there too, at the far right as on the toolbar, with the same menus",
-      _cm.isVisible() and _cm.menu() is w.main_menu and not _cm.icon().isNull()
-      and _cm.mapTo(w, QPoint(0, 0)).x() > w.clean_button.mapTo(w, QPoint(0, 0)).x()
-      and _cm.mapTo(w, QPoint(0, 0)).x() + _cm.width() > w.width() - 12)
+check("the menu button is there too, at the far left as on the toolbar",
+      _cm.isVisible() and not _cm.icon().isNull() and _cm.mapTo(w, QPoint(0, 0)).x() < 12 and _cm.x() < _pb.x())
+w.actions_by_name["menu"].trigger(); settle(200)
+check("and F10 opens the same menu under it", w.menu_panel.isVisible() and _cm.isChecked() and not w.menu_button.isChecked()
+      and w.menu_panel.y() >= _cm.mapTo(w, QPoint(0, 0)).y() + _cm.height() and w.menu_panel.x() < 20, str(w.menu_panel.geometry()))
+QTest.keyClick(w.menu_panel.search, Qt.Key_Escape); settle(100)
+check("(and Escape closes it)", not w.menu_panel.isVisible() and not _cm.isChecked())
 _bar = w.tabs.tabBar()
 _mid = lambda x: x.mapTo(w, QPoint(0, 0)).y() + x.height() / 2     # noqa: E731
 check("they stand in the middle of the tab bar's height, not against its bottom edge",
@@ -1892,7 +1939,8 @@ panel_click(0)
 def toolbar_now(win):
     """What shows on the toolbar, in order: action names, "|" for a divider, "?" for a widget."""
     names = {a_: n for n, a_ in win.actions_by_name.items()}
-    return [("|" if x.isSeparator() else names.get(x, "?")) for x in win.toolbar.actions() if x.isVisible()]
+    return [("|" if x.isSeparator() else names.get(x, "?")) for x in win.toolbar.actions()
+            if x.isVisible() and x is not win._toolbar_widgets["menu"]]      # (the menu button, always first)
 
 
 def prefs_do(steps, ok=True):
@@ -1980,8 +2028,7 @@ check("the widgets come through being moved: page box, zoom box, highlight colou
       all(x.isVisible() for x in (w.page_box, w.page_total, w.zoom_box, w.color_button, w.font_size))
       and w.color_button.menu() is not None and w.open_button.menu() is w.open_recent_menu
       and w.open_button.popupMode() == QToolButton.MenuButtonPopup)
-_file = next(m_.menu() for m_ in w.main_menu.actions() if m_.text() == "&File")
-check("what is taken off stays in the menus, with its shortcut", w.actions_by_name["print"] in _file.actions()
+check("what is taken off stays in the menus, with its shortcut", w.actions_by_name["print"] in w.menu_actions("File")
       and all(w.actions_by_name[n].isVisible() and w.actions_by_name[n] in w.actions() for n in ("print", "undo", "redo")))
 _btn = {n: w.toolbar.widgetForAction(w.actions_by_name[n]) for n in ("mode_redact", "ocr", "mode_typewriter", "fit_page", "save")}
 check("buttons keep their looks wherever they are: a word beside OCR, Typewriter and Redact, an icon alone for the rest",
@@ -2138,10 +2185,9 @@ try:
     check("version numbers compare by number, not by spelling",
           updates.version_key("0.10.0") > updates.version_key("0.9.9") and updates.version_key("v0.5.1") == (0, 5, 1)
           and updates.version_key("soon") == ())
-    help_menu = [m for m in w.main_menu.findChildren(QMenu) if m.title() == "&Help"][0]
     bare = window.MainWindow()
-    check("Check for Updates is in the Help menu, and works with no document open",
-          w.actions_by_name["updates"] in help_menu.actions() and bare.actions_by_name["updates"].isEnabled())
+    check("Check for Updates is at the foot of the menu, and works with no document open",
+          w.actions_by_name["updates"] in w.menu_contents()[2] and bare.actions_by_name["updates"].isEnabled())
     bare.close()
 
     updates.FLATPAK_ID = None
