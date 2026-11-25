@@ -9,15 +9,18 @@ run, a click anywhere else, or the window losing the keyboard closes it.
 
 (The same panel as Kosmos Writer's.)
 """
-from PySide6.QtCore import QEvent, QPoint, QRect, QSize, Qt, QTimer, Signal
-from PySide6.QtGui import QColor, QKeySequence, QPainter, QPalette
+import math
+
+from PySide6.QtCore import QEvent, QPoint, QRect, QRectF, QSize, Qt, QTimer, Signal
+from PySide6.QtGui import QColor, QKeySequence, QPainter, QPalette, QPen
 from PySide6.QtWidgets import QAbstractButton, QApplication, QFrame, QLineEdit, QScrollArea, QVBoxLayout, QWidget
 
-from .theme import lucide
+from .theme import Colors, lucide
 
 WIDTH, ROW = 300, 28
 EDGE = 6                # the least space kept between a panel and the window's edge
 GAP = 3                 # between the panel and its subpanel
+RADIUS = 8              # of a panel's corners
 LINGER = 180            # ms the pointer rests on a row before the subpanel follows it
 
 
@@ -112,12 +115,23 @@ class Row(QAbstractButton):
                        metrics.elidedText(self.hint, Qt.ElideLeft, max(0, right - at)))
 
 
-class Line(QFrame):
+class Line(QWidget):
+    """The line between two groups of rows: one device pixel thick and on a whole pixel
+    wherever it falls, so that every line in a panel looks the same at any display scale."""
+
     def __init__(self):
         super().__init__()
-        self.setFrameShape(QFrame.HLine)
         self.setFixedHeight(9)
         self.setEnabled(False)
+
+    def paintEvent(self, event):
+        p = QPainter(self)
+        d = self.devicePixelRatioF()
+        at = self.mapTo(self.window(), QPoint(0, 0))
+        y = round((at.y() + self.height() / 2) * d)             # in the window's device pixels
+        p.scale(1 / d, 1 / d)
+        p.translate(-at.x() * d, -at.y() * d)
+        p.fillRect(QRectF(at.x() * d, y, self.width() * d, 1), Colors().line)
 
 
 class Rows(QScrollArea):
@@ -179,7 +193,28 @@ class Rows(QScrollArea):
         self.set_current(usable[at])
 
 
-class SubPanel(QFrame):
+class Panel(QFrame):
+    """A rounded panel with a hairline around it. The line is drawn here, one device pixel
+    wide and on whole device pixels wherever the panel sits; a style sheet's border is a
+    point wide, which at a display scale of 125% or 150% smears over two pixels on some
+    sides and not others."""
+
+    def paintEvent(self, event):
+        colors = Colors()
+        p = QPainter(self)
+        p.setRenderHint(QPainter.Antialiasing)
+        d = self.devicePixelRatioF()
+        at = self.mapTo(self.window(), QPoint(0, 0))
+        left, top = math.ceil(at.x() * d - 1e-6), math.ceil(at.y() * d - 1e-6)
+        right, bottom = math.floor((at.x() + self.width()) * d + 1e-6), math.floor((at.y() + self.height()) * d + 1e-6)
+        p.scale(1 / d, 1 / d)
+        p.translate(-at.x() * d, -at.y() * d)           # now in the window's device pixels
+        p.setPen(QPen(colors.line, 1))
+        p.setBrush(colors.panel)
+        p.drawRoundedRect(QRectF(left + 0.5, top + 0.5, right - left - 1, bottom - top - 1), RADIUS * d, RADIUS * d)
+
+
+class SubPanel(Panel):
     """A section's commands, beside the row that opened it."""
 
     def __init__(self, menu, parent):
@@ -192,7 +227,7 @@ class SubPanel(QFrame):
         self.hide()
 
 
-class MenuPanel(QFrame):
+class MenuPanel(Panel):
     """contents() gives what the menu holds, each time it is laid out:
     (top, sections, bottom), where top and bottom are lists of QAction (None for a line)
     and sections is [(title, [QAction or None or (QAction, hint)])]. closed: the menu has
